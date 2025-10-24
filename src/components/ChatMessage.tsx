@@ -1,0 +1,34 @@
+import { cn } from "@/lib/utils";
+import { Bot, User } from "lucide-react";
+
+interface ChatMessageProps {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export const ChatMessage = ({ role, content }: ChatMessageProps) => {
+  return (
+    <div
+      className={cn(
+        "flex gap-3 p-4 rounded-lg transition-all",
+        role === "user"
+          ? "bg-primary/10 ml-8"
+          : "bg-card mr-8"
+      )}
+    >
+      <div
+        className={cn(
+          "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+          role === "user"
+            ? "bg-primary text-primary-foreground"
+            : "bg-gradient-to-br from-primary to-secondary text-background"
+        )}
+      >
+        {role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+      </div>
+      <div className="flex-1 pt-1">
+        <p className="text-sm text-foreground whitespace-pre-wrap">{content}</p>
+      </div>
+    </div>
+  );
+};
