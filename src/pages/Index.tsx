@@ -57,7 +57,7 @@ const Index = () => {
   };
 
   const streamChat = async (messages: Message[]) => {
-    const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+    const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`;
 
     const resp = await fetch(CHAT_URL, {
       method: "POST",
