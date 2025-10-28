@@ -20,7 +20,7 @@ serve(async (req) => {
       throw new Error('Cloudflare credentials not configured');
     }
 
-    console.log('[openchat] Starting request to OpenChat 3.5...');
+    console.log('[openchat] Starting request to Mistral 7B...');
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -46,14 +46,14 @@ serve(async (req) => {
     }
 
     // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant powered by OpenChat 3.5. You have been trained with custom knowledge. Use the knowledge base provided below to answer questions accurately. If the information is in the knowledge base, cite it. If not, use your general knowledge but mention that it's not from the custom knowledge base.${knowledgeContext}`;
+    const systemPrompt = `You are an intelligent AI assistant powered by Mistral 7B. You have been trained with custom knowledge. Use the knowledge base provided below to answer questions accurately. If the information is in the knowledge base, cite it. If not, use your general knowledge but mention that it's not from the custom knowledge base.${knowledgeContext}`;
 
     const chatMessages = [
       { role: 'system', content: systemPrompt },
       ...messages,
     ];
 
-    console.log('[openchat] Calling Cloudflare Workers AI OpenChat 3.5...');
+    console.log('[openchat] Calling Cloudflare Workers AI Mistral 7B...');
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
@@ -64,7 +64,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: '@cf/openchat/openchat-3.5-0106',
+          model: '@cf/mistral/mistral-7b-instruct-v0.1',
           messages: chatMessages,
           stream: true,
         }),
@@ -73,7 +73,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[openchat] Cloudflare Workers AI error:', response.status, errorText);
+      console.error('[openchat] Mistral 7B error:', response.status, errorText);
       return new Response(
         JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
