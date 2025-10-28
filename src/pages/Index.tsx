@@ -2,15 +2,23 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Code2, MessageSquare, Loader2 } from "lucide-react";
+import { Send, Code2, MessageSquare, Loader2, Menu } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
 import { AdminPanel } from "@/components/AdminPanel";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { ConversationSidebar } from "@/components/ConversationSidebar";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  updated_at: string;
 }
 
 interface KnowledgeEntry {
@@ -27,6 +35,8 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"chat" | "admin">("chat");
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -40,7 +50,14 @@ const Index = () => {
 
   useEffect(() => {
     fetchKnowledge();
+    fetchConversations();
   }, []);
+
+  useEffect(() => {
+    if (currentConversationId) {
+      loadConversation(currentConversationId);
+    }
+  }, [currentConversationId]);
 
   const fetchKnowledge = async () => {
     const { data, error } = await supabase
@@ -56,7 +73,95 @@ const Index = () => {
     setKnowledgeEntries(data || []);
   };
 
-  const streamChat = async (messages: Message[]) => {
+  const fetchConversations = async () => {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching conversations:", error);
+      return;
+    }
+
+    setConversations(data || []);
+  };
+
+  const loadConversation = async (conversationId: string) => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error loading conversation:", error);
+      return;
+    }
+
+    const formattedMessages = (data || []).map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    }));
+
+    setMessages(formattedMessages);
+  };
+
+  const createNewConversation = async () => {
+    const { data, error } = await supabase
+      .from("conversations")
+      .insert({ title: "New Conversation" })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating conversation:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create conversation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCurrentConversationId(data.id);
+    setMessages([]);
+    fetchConversations();
+  };
+
+  const deleteConversation = async (id: string) => {
+    const { error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting conversation:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete conversation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (currentConversationId === id) {
+      setCurrentConversationId(null);
+      setMessages([]);
+    }
+
+    fetchConversations();
+  };
+
+  const updateConversationTitle = async (conversationId: string, firstMessage: string) => {
+    const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? "..." : "");
+    await supabase
+      .from("conversations")
+      .update({ title })
+      .eq("id", conversationId);
+  };
+
+  const streamChat = async (messages: Message[], conversationId: string) => {
     const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`;
 
     const resp = await fetch(CHAT_URL, {
@@ -134,10 +239,42 @@ const Index = () => {
         }
       }
     }
+
+    // Save the complete assistant message to database
+    if (assistantContent) {
+      await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        role: "assistant",
+        content: assistantContent,
+      });
+    }
   };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+
+    // Create new conversation if none exists
+    let conversationId = currentConversationId;
+    if (!conversationId) {
+      const { data, error } = await supabase
+        .from("conversations")
+        .insert({ title: "New Conversation" })
+        .select()
+        .single();
+
+      if (error || !data) {
+        toast({
+          title: "Error",
+          description: "Failed to create conversation",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      conversationId = data.id;
+      setCurrentConversationId(conversationId);
+      fetchConversations();
+    }
 
     const userMessage: Message = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMessage];
@@ -146,8 +283,21 @@ const Index = () => {
     setInput("");
     setIsLoading(true);
 
+    // Save user message to database
+    await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "user",
+      content: userMessage.content,
+    });
+
+    // Update conversation title with first message
+    if (messages.length === 0) {
+      updateConversationTitle(conversationId, userMessage.content);
+    }
+
     try {
-      await streamChat(newMessages);
+      await streamChat(newMessages, conversationId);
+      fetchConversations(); // Refresh to update timestamps
     } catch (error) {
       console.error("Error sending message:", error);
       toast({
@@ -161,45 +311,58 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                <Code2 className="w-6 h-6 text-background" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
-                <p className="text-xs text-muted-foreground">Powered by Mistral</p>
-              </div>
-            </div>
-            
-            <div className="flex gap-2">
-              <Button
-                variant={viewMode === "chat" ? "default" : "outline"}
-                onClick={() => setViewMode("chat")}
-                size="sm"
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Chat
-              </Button>
-              <Button
-                variant={viewMode === "admin" ? "default" : "outline"}
-                onClick={() => setViewMode("admin")}
-                size="sm"
-              >
-                <Code2 className="w-4 h-4 mr-2" />
-                Admin
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <SidebarProvider>
+      <div className="min-h-screen bg-background flex w-full">
+        <ConversationSidebar
+          conversations={conversations}
+          currentConversationId={currentConversationId}
+          onSelectConversation={setCurrentConversationId}
+          onNewConversation={createNewConversation}
+          onDeleteConversation={deleteConversation}
+        />
 
-      {/* Main Content */}
-      <div className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
+        <div className="flex-1 flex flex-col">
+          {/* Header */}
+          <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+            <div className="container mx-auto px-4 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <SidebarTrigger>
+                    <Menu className="h-5 w-5" />
+                  </SidebarTrigger>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                    <Code2 className="w-6 h-6 text-background" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
+                    <p className="text-xs text-muted-foreground">Powered by Mistral</p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button
+                    variant={viewMode === "chat" ? "default" : "outline"}
+                    onClick={() => setViewMode("chat")}
+                    size="sm"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Chat
+                  </Button>
+                  <Button
+                    variant={viewMode === "admin" ? "default" : "outline"}
+                    onClick={() => setViewMode("admin")}
+                    size="sm"
+                  >
+                    <Code2 className="w-4 h-4 mr-2" />
+                    Admin
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <div className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         {viewMode === "chat" ? (
           <Card className="h-[calc(100vh-12rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
             {/* Messages */}
@@ -258,9 +421,11 @@ const Index = () => {
           <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
             <AdminPanel knowledgeEntries={knowledgeEntries} onRefresh={fetchKnowledge} />
           </Card>
-        )}
+          )}
+        </div>
       </div>
     </div>
+    </SidebarProvider>
   );
 };
 
