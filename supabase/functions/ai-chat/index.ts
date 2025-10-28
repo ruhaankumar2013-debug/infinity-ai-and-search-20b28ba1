@@ -13,14 +13,13 @@ serve(async (req) => {
 
   try {
     const { messages } = await req.json();
-    const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
-    const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
-    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-      throw new Error('Cloudflare credentials not configured');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    console.log('Initializing OpenChat 3.5 request...');
+    console.log('Initializing Lovable AI (Gemini 2.5 Flash) request...');
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -46,27 +45,27 @@ serve(async (req) => {
     }
 
     // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant powered by OpenChat 3.5. You have been trained with custom knowledge. Use the knowledge base provided below to answer questions accurately. If the information is in the knowledge base, cite it. If not, use your general knowledge but mention that it's not from the custom knowledge base.${knowledgeContext}`;
+    const systemPrompt = `You are an intelligent AI assistant. You have been trained with custom knowledge. Use the knowledge base provided below to answer questions accurately. If the information is in the knowledge base, cite it. If not, use your general knowledge but mention that it's not from the custom knowledge base.${knowledgeContext}`;
 
-    // Prepare messages for OpenChat
+    // Prepare messages for Lovable AI
     const chatMessages = [
       { role: 'system', content: systemPrompt },
       ...messages,
     ];
 
-    console.log('Calling Cloudflare Workers AI with OpenChat 3.5...');
+    console.log('Calling Lovable AI Gateway with Gemini 2.5 Flash...');
 
-    // Call Cloudflare Workers AI with OpenChat 3.5
+    // Call Lovable AI Gateway
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+      'https://ai.gateway.lovable.dev/v1/chat/completions',
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: '@cf/openchat/openchat-3.5-0106',
+          model: 'google/gemini-2.5-flash',
           messages: chatMessages,
           stream: true,
         }),
@@ -75,14 +74,28 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Cloudflare Workers AI error:', response.status, errorText);
+      console.error('Lovable AI error:', response.status, errorText);
+      
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: 'Rate limits exceeded, please try again later.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: 'Payment required, please add funds to your Lovable AI workspace.' }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
       return new Response(
-        JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}` }),
+        JSON.stringify({ error: `Lovable AI error: ${response.status}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Successfully connected to OpenChat 3.5, streaming response...');
+    console.log('Successfully connected to Lovable AI, streaming response...');
 
     // Return the stream
     return new Response(response.body, {
