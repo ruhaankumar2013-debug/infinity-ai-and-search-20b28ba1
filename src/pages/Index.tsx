@@ -171,8 +171,8 @@ const Index = () => {
                 <Code2 className="w-6 h-6 text-background" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">AI Assistant</h1>
-                <p className="text-xs text-muted-foreground">Powered by Custom Knowledge</p>
+                <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
+                <p className="text-xs text-muted-foreground">Powered by Mistral</p>
               </div>
             </div>
             
