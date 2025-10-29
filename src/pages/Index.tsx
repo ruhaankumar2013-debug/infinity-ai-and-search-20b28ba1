@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Code2, MessageSquare, Loader2, Menu } from "lucide-react";
+import { Send, Code2, MessageSquare, Loader2, Menu, LogOut } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
 import { AdminPanel } from "@/components/AdminPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
+import type { User, Session } from "@supabase/supabase-js";
 
 interface Message {
   role: "user" | "assistant";
@@ -37,7 +39,11 @@ const Index = () => {
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const { toast } = useToast();
 
   const scrollToBottom = () => {
@@ -49,9 +55,72 @@ const Index = () => {
   }, [messages]);
 
   useEffect(() => {
-    fetchKnowledge();
-    fetchConversations();
-  }, []);
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (!session) {
+          navigate("/auth");
+        } else {
+          // Check admin status
+          setTimeout(() => {
+            checkAdminStatus(session.user.id);
+          }, 0);
+        }
+      }
+    );
+
+    // Then check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        navigate("/auth");
+      } else {
+        checkAdminStatus(session.user.id);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (user) {
+      fetchKnowledge();
+      fetchConversations();
+    }
+  }, [user]);
+
+  const checkAdminStatus = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "admin")
+      .maybeSingle();
+
+    if (!error && data) {
+      setIsAdmin(true);
+    } else {
+      setIsAdmin(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      });
+    } else {
+      navigate("/auth");
+    }
+  };
 
   useEffect(() => {
     if (currentConversationId) {
@@ -310,6 +379,14 @@ const Index = () => {
     }
   };
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-background flex w-full">
@@ -348,13 +425,23 @@ const Index = () => {
                     <MessageSquare className="w-4 h-4 mr-2" />
                     Chat
                   </Button>
+                  {isAdmin && (
+                    <Button
+                      variant={viewMode === "admin" ? "default" : "outline"}
+                      onClick={() => setViewMode("admin")}
+                      size="sm"
+                    >
+                      <Code2 className="w-4 h-4 mr-2" />
+                      Admin
+                    </Button>
+                  )}
                   <Button
-                    variant={viewMode === "admin" ? "default" : "outline"}
-                    onClick={() => setViewMode("admin")}
+                    variant="outline"
+                    onClick={handleLogout}
                     size="sm"
                   >
-                    <Code2 className="w-4 h-4 mr-2" />
-                    Admin
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
                   </Button>
                 </div>
               </div>
