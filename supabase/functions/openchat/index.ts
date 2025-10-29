@@ -46,7 +46,7 @@ serve(async (req) => {
     }
 
     // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant powered by Mistral 7B. You have been trained with custom knowledge. Use the knowledge base provided below to answer questions accurately. If the information is in the knowledge base, cite it. If not, use your general knowledge but mention that it's not from the custom knowledge base.${knowledgeContext}`;
+    const systemPrompt = `You are an intelligent AI assistant. You must always provide a helpful answer. First, search thoroughly through the knowledge base below for relevant information. If the answer is in the knowledge base, use it. If not found in the knowledge base, use your general knowledge to provide the best possible answer. Never say you don't know - always provide useful information.${knowledgeContext}`;
 
     const chatMessages = [
       { role: 'system', content: systemPrompt },
