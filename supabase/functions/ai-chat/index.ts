@@ -45,7 +45,7 @@ serve(async (req) => {
     }
 
     // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant. Use the information from the knowledge base below when relevant to answer questions accurately and naturally. Do not mention the knowledge base or that you have custom knowledge unless specifically asked about it.${knowledgeContext}`;
+    const systemPrompt = `You are an intelligent AI assistant. When answering questions, first check if the information is available in the knowledge base below. If it is, use that information. If the answer is not in the knowledge base, use your general knowledge to provide a helpful response. Do not mention the knowledge base or that you have custom knowledge unless specifically asked about it.${knowledgeContext}`;
 
     // Prepare messages for Lovable AI
     const chatMessages = [
