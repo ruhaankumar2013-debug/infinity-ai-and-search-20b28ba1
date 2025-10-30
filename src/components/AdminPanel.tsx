@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Plus, Upload, BookOpen } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeEntry } from "./KnowledgeEntry";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface KnowledgeEntryType {
   id: string;
@@ -15,6 +16,13 @@ interface KnowledgeEntryType {
   content: string;
   source_type: string;
   created_at: string;
+  model_id: string | null;
+}
+
+interface Model {
+  id: string;
+  display_name: string;
+  name: string;
 }
 
 interface AdminPanelProps {
@@ -26,7 +34,31 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchModels();
+  }, []);
+
+  const fetchModels = async () => {
+    const { data, error } = await supabase
+      .from("models")
+      .select("id, display_name, name")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching models:", error);
+      return;
+    }
+
+    setModels(data || []);
+    if (data && data.length > 0 && !selectedModelId) {
+      setSelectedModelId(data[0].id);
+    }
+  };
 
   const handleAddKnowledge = async () => {
     if (!title.trim() || !content.trim()) {
@@ -44,6 +76,7 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
         title: title.trim(),
         content: content.trim(),
         source_type: "manual",
+        model_id: selectedModelId,
       });
 
       if (error) throw error;
@@ -103,6 +136,7 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
         title: file.name,
         content: text,
         source_type: "file",
+        model_id: selectedModelId,
       });
 
       if (error) throw error;
@@ -132,6 +166,22 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
         </div>
         
         <div className="space-y-4">
+          <div>
+            <Label htmlFor="model">Assign to Model</Label>
+            <Select value={selectedModelId || undefined} onValueChange={setSelectedModelId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Select a model..." />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div>
             <Label htmlFor="title">Knowledge Title</Label>
             <Input
@@ -184,17 +234,22 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
         <h3 className="text-sm font-medium text-muted-foreground px-1">
           Knowledge Base ({knowledgeEntries.length})
         </h3>
-        {knowledgeEntries.map((entry) => (
-          <KnowledgeEntry
-            key={entry.id}
-            id={entry.id}
-            title={entry.title}
-            content={entry.content}
-            sourceType={entry.source_type}
-            createdAt={entry.created_at}
-            onDelete={handleDeleteKnowledge}
-          />
-        ))}
+        {knowledgeEntries.map((entry) => {
+          const model = models.find(m => m.id === entry.model_id);
+          return (
+            <KnowledgeEntry
+              key={entry.id}
+              id={entry.id}
+              title={entry.title}
+              content={entry.content}
+              sourceType={entry.source_type}
+              createdAt={entry.created_at}
+              model_id={entry.model_id}
+              model_name={model?.display_name}
+              onDelete={handleDeleteKnowledge}
+            />
+          );
+        })}
       </div>
     </div>
   );

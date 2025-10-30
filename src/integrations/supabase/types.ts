@@ -39,28 +39,40 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          model_id: string | null
           title: string
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
+          model_id?: string | null
           title?: string
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
+          model_id?: string | null
           title?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "conversations_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "models"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       knowledge_entries: {
         Row: {
           content: string
           created_at: string | null
           id: string
+          model_id: string | null
           source_type: string
           title: string
           updated_at: string | null
@@ -69,6 +81,7 @@ export type Database = {
           content: string
           created_at?: string | null
           id?: string
+          model_id?: string | null
           source_type?: string
           title: string
           updated_at?: string | null
@@ -77,11 +90,20 @@ export type Database = {
           content?: string
           created_at?: string | null
           id?: string
+          model_id?: string | null
           source_type?: string
           title?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_entries_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "models"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       messages: {
         Row: {
@@ -114,6 +136,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      models: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_name: string
+          id: string
+          is_active: boolean
+          license: string
+          model_id: string
+          name: string
+          parameters: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_name: string
+          id?: string
+          is_active?: boolean
+          license?: string
+          model_id: string
+          name: string
+          parameters?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          license?: string
+          model_id?: string
+          name?: string
+          parameters?: string | null
+          type?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {

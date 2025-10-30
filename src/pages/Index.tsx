@@ -10,6 +10,8 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { AdminPanel } from "@/components/AdminPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
+import { ModelSelector } from "@/components/ModelSelector";
+import { generateText } from "@/services/browserAI";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface Message {
@@ -29,6 +31,7 @@ interface KnowledgeEntry {
   content: string;
   source_type: string;
   created_at: string;
+  model_id: string | null;
 }
 
 const Index = () => {
@@ -42,6 +45,7 @@ const Index = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -230,82 +234,92 @@ const Index = () => {
       .eq("id", conversationId);
   };
 
-  const streamChat = async (messages: Message[], conversationId: string) => {
-    const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`;
-
-    const resp = await fetch(CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({ messages }),
-    });
-
-    if (!resp.ok) {
-      if (resp.status === 429) {
-        toast({
-          title: "Rate limit exceeded",
-          description: "Please try again later",
-          variant: "destructive",
-        });
-      } else if (resp.status === 402) {
-        toast({
-          title: "Payment required",
-          description: "Please add funds to continue",
-          variant: "destructive",
-        });
-      }
-      throw new Error("Failed to start stream");
+  const generateWithBrowserAI = async (messages: Message[], conversationId: string) => {
+    if (!selectedModelId) {
+      toast({
+        title: "No model selected",
+        description: "Please select an AI model first",
+        variant: "destructive",
+      });
+      throw new Error("No model selected");
     }
 
-    if (!resp.body) throw new Error("No response body");
+    // Fetch the model details and its knowledge
+    const { data: modelData } = await supabase
+      .from("models")
+      .select("*")
+      .eq("id", selectedModelId)
+      .single();
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let textBuffer = "";
-    let streamDone = false;
+    if (!modelData) {
+      throw new Error("Model not found");
+    }
+
+    // Fetch knowledge entries for this model
+    const { data: knowledgeData } = await supabase
+      .from("knowledge_entries")
+      .select("*")
+      .eq("model_id", selectedModelId);
+
+    // Build system prompt with knowledge
+    let systemPrompt = "You are a helpful AI assistant.";
+    if (knowledgeData && knowledgeData.length > 0) {
+      systemPrompt += "\n\nYou have access to the following knowledge:\n\n";
+      knowledgeData.forEach((entry) => {
+        systemPrompt += `## ${entry.title}\n${entry.content}\n\n`;
+      });
+    }
+
+    // Get the last user message
+    const lastUserMessage = messages[messages.length - 1];
+    if (!lastUserMessage || lastUserMessage.role !== "user") {
+      throw new Error("No user message found");
+    }
+
     let assistantContent = "";
 
-    while (!streamDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      textBuffer += decoder.decode(value, { stream: true });
-
-      let newlineIndex: number;
-      while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-        let line = textBuffer.slice(0, newlineIndex);
-        textBuffer = textBuffer.slice(newlineIndex + 1);
-
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (line.startsWith(":") || line.trim() === "") continue;
-        if (!line.startsWith("data: ")) continue;
-
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === "[DONE]") {
-          streamDone = true;
-          break;
+    try {
+      // Generate with streaming
+      await generateText(
+        lastUserMessage.content,
+        {
+          model: modelData.model_id,
+          systemPrompt,
+          maxTokens: 512,
+          temperature: 0.7,
+        },
+        (token: string) => {
+          assistantContent += token;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, content: assistantContent } : m
+              );
+            }
+            return [...prev, { role: "assistant", content: assistantContent }];
+          });
         }
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-          if (content) {
-            assistantContent += content;
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role === "assistant") {
-                return prev.map((m, i) =>
-                  i === prev.length - 1 ? { ...m, content: assistantContent } : m
-                );
-              }
-              return [...prev, { role: "assistant", content: assistantContent }];
-            });
+      );
+    } catch (error) {
+      console.error("Browser AI error:", error);
+      
+      // Fallback to non-streaming
+      try {
+        assistantContent = await generateText(
+          lastUserMessage.content,
+          {
+            model: modelData.model_id,
+            systemPrompt,
+            maxTokens: 512,
+            temperature: 0.7,
           }
-        } catch {
-          textBuffer = line + "\n" + textBuffer;
-          break;
-        }
+        );
+
+        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+      } catch (fallbackError) {
+        console.error("Fallback error:", fallbackError);
+        throw new Error("Failed to generate response. Please try again or select a different model.");
       }
     }
 
@@ -365,13 +379,13 @@ const Index = () => {
     }
 
     try {
-      await streamChat(newMessages, conversationId);
+      await generateWithBrowserAI(newMessages, conversationId);
       fetchConversations(); // Refresh to update timestamps
     } catch (error) {
       console.error("Error sending message:", error);
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: error instanceof Error ? error.message : "Failed to send message",
         variant: "destructive",
       });
     } finally {
@@ -412,7 +426,7 @@ const Index = () => {
                   </div>
                   <div>
                     <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
-                    <p className="text-xs text-muted-foreground">Powered by Mistral</p>
+                    <p className="text-xs text-muted-foreground">Apache 2.0 Models • Browser AI</p>
                   </div>
                 </div>
                 
@@ -451,7 +465,12 @@ const Index = () => {
           {/* Main Content */}
           <div className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         {viewMode === "chat" ? (
-          <Card className="h-[calc(100vh-12rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
+          <div className="space-y-4">
+            <ModelSelector 
+              selectedModelId={selectedModelId}
+              onSelectModel={setSelectedModelId}
+            />
+          <Card className="h-[calc(100vh-18rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {messages.length === 0 && (
@@ -504,6 +523,7 @@ const Index = () => {
               </div>
             </div>
           </Card>
+          </div>
         ) : (
           <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
             <AdminPanel knowledgeEntries={knowledgeEntries} onRefresh={fetchKnowledge} />
