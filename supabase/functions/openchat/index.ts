@@ -64,9 +64,9 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: '@cf/mistral/mistral-7b-instruct-v0.1',
+          model: '@cf/mistral/mistral-7b-instruct-v0.2',
           messages: chatMessages,
-          stream: true,
+          stream: false,
         }),
       }
     );
@@ -80,11 +80,15 @@ serve(async (req) => {
       );
     }
 
-    console.log('[openchat] Streaming response back to client...');
+    const result = await response.json();
+    const aiResponse = result.result?.response || result.choices?.[0]?.message?.content || 'No response';
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-    });
+    console.log('[openchat] Sending response back to client...');
+
+    return new Response(
+      JSON.stringify({ response: aiResponse }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   } catch (e) {
     console.error('[openchat] Chat error:', e);
     return new Response(
