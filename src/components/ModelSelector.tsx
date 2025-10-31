@@ -44,9 +44,10 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
 
     setModels(data || []);
     
-    // Auto-select first model if none selected
+    // Auto-select Mistral 7B as default if none selected
     if (data && data.length > 0 && !selectedModelId) {
-      onSelectModel(data[0].id);
+      const mistralModel = data.find(m => m.name === 'mistral-7b-instruct');
+      onSelectModel(mistralModel ? mistralModel.id : data[0].id);
     }
     
     setIsLoading(false);
