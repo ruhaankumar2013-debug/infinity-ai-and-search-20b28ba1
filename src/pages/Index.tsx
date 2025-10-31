@@ -300,51 +300,13 @@ const Index = () => {
         throw new Error("Failed to generate response with Mistral 7B. Please try again.");
       }
     } else {
-      // Use browser AI for local models
-      try {
-        // Generate with streaming
-        await generateText(
-          lastUserMessage.content,
-          {
-            model: modelData.model_id,
-            systemPrompt,
-            maxTokens: 512,
-            temperature: 0.7,
-          },
-          (token: string) => {
-            assistantContent += token;
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role === "assistant") {
-                return prev.map((m, i) =>
-                  i === prev.length - 1 ? { ...m, content: assistantContent } : m
-                );
-              }
-              return [...prev, { role: "assistant", content: assistantContent }];
-            });
-          }
-        );
-      } catch (error) {
-        console.error("Browser AI error:", error);
-        
-        // Fallback to non-streaming
-        try {
-          assistantContent = await generateText(
-            lastUserMessage.content,
-            {
-              model: modelData.model_id,
-              systemPrompt,
-              maxTokens: 512,
-              temperature: 0.7,
-            }
-          );
-
-          setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
-        } catch (fallbackError) {
-          console.error("Fallback error:", fallbackError);
-          throw new Error("Failed to generate response. Please try again or select a different model.");
-        }
-      }
+      // Browser models are currently unavailable due to HuggingFace access restrictions
+      toast({
+        title: "Browser models unavailable",
+        description: "Please use Mistral 7B Instruct model instead",
+        variant: "destructive",
+      });
+      throw new Error("Browser-based models are currently unavailable. Please select Mistral 7B Instruct v0.2.");
     }
 
     // Save the complete assistant message to database
