@@ -278,48 +278,72 @@ const Index = () => {
 
     let assistantContent = "";
 
-    try {
-      // Generate with streaming
-      await generateText(
-        lastUserMessage.content,
-        {
-          model: modelData.model_id,
-          systemPrompt,
-          maxTokens: 512,
-          temperature: 0.7,
-        },
-        (token: string) => {
-          assistantContent += token;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === "assistant") {
-              return prev.map((m, i) =>
-                i === prev.length - 1 ? { ...m, content: assistantContent } : m
-              );
-            }
-            return [...prev, { role: "assistant", content: assistantContent }];
-          });
-        }
-      );
-    } catch (error) {
-      console.error("Browser AI error:", error);
-      
-      // Fallback to non-streaming
+    // Check if this is the Mistral API model (starts with @cf/)
+    if (modelData.model_id.startsWith('@cf/')) {
+      // Use edge function for Mistral 7B
       try {
-        assistantContent = await generateText(
+        const { data, error } = await supabase.functions.invoke('openchat', {
+          body: { 
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: lastUserMessage.content }
+            ]
+          }
+        });
+
+        if (error) throw error;
+
+        assistantContent = data.response;
+        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+      } catch (error) {
+        console.error("Mistral API error:", error);
+        throw new Error("Failed to generate response with Mistral 7B. Please try again.");
+      }
+    } else {
+      // Use browser AI for local models
+      try {
+        // Generate with streaming
+        await generateText(
           lastUserMessage.content,
           {
             model: modelData.model_id,
             systemPrompt,
             maxTokens: 512,
             temperature: 0.7,
+          },
+          (token: string) => {
+            assistantContent += token;
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant") {
+                return prev.map((m, i) =>
+                  i === prev.length - 1 ? { ...m, content: assistantContent } : m
+                );
+              }
+              return [...prev, { role: "assistant", content: assistantContent }];
+            });
           }
         );
+      } catch (error) {
+        console.error("Browser AI error:", error);
+        
+        // Fallback to non-streaming
+        try {
+          assistantContent = await generateText(
+            lastUserMessage.content,
+            {
+              model: modelData.model_id,
+              systemPrompt,
+              maxTokens: 512,
+              temperature: 0.7,
+            }
+          );
 
-        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
-      } catch (fallbackError) {
-        console.error("Fallback error:", fallbackError);
-        throw new Error("Failed to generate response. Please try again or select a different model.");
+          setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+        } catch (fallbackError) {
+          console.error("Fallback error:", fallbackError);
+          throw new Error("Failed to generate response. Please try again or select a different model.");
+        }
       }
     }
 
