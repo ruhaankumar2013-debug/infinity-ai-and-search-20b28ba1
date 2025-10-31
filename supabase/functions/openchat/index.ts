@@ -64,7 +64,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: '@cf/mistral/mistral-7b-instruct-v0.2',
+          model: '@cf/mistral/mistral-7b-instruct-v0.1',
           messages: chatMessages,
           stream: false,
         }),
