@@ -4,6 +4,9 @@ import { pipeline, env } from '@huggingface/transformers';
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Note: HuggingFace token can be set via VITE_HUGGING_FACE_TOKEN env variable
+// Some models may require authentication - get token from https://huggingface.co/settings/tokens
+
 interface TextGenerationOptions {
   model: string;
   systemPrompt?: string;
