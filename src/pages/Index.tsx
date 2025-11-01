@@ -330,10 +330,10 @@ const Index = () => {
         // Show helpful error message
         toast({
           title: "Browser model error",
-          description: "This model may require a HuggingFace token. Try Mistral 7B Instruct instead.",
+          description: "This model can’t be loaded in the browser (likely gated or unsupported). Try TinyLlama or Qwen2 0.5B, or use Mistral 7B Instruct.",
           variant: "destructive",
         });
-        throw new Error("Failed to generate response. Please try Mistral 7B Instruct or add a HuggingFace token.");
+        throw new Error("Failed to generate response. Switch to a public browser model (e.g., TinyLlama/Qwen2 0.5B) or use Mistral 7B Instruct.");
       }
     }
 
