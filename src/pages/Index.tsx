@@ -278,16 +278,18 @@ const Index = () => {
 
     let assistantContent = "";
 
-    // Check if this is the Mistral API model (starts with @cf/)
+    // Check if this is a Cloudflare Workers AI model (starts with @cf/)
     if (modelData.model_id.startsWith('@cf/')) {
-      // Use edge function for Mistral 7B
+      // Use edge function for Cloudflare Workers AI models
       try {
         const { data, error } = await supabase.functions.invoke('openchat', {
           body: { 
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: lastUserMessage.content }
-            ]
+            ],
+            modelId: selectedModelId,
+            modelName: modelData.model_id
           }
         });
 
@@ -296,8 +298,8 @@ const Index = () => {
         assistantContent = data.response;
         setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
       } catch (error) {
-        console.error("Mistral API error:", error);
-        throw new Error("Failed to generate response with Mistral 7B. Please try again.");
+        console.error("Cloudflare Workers AI error:", error);
+        throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
       }
     } else {
       // Use browser AI for local models

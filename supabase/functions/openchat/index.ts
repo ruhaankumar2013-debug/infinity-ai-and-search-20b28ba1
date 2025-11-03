@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, modelId, modelName } = await req.json();
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
 
@@ -20,18 +20,24 @@ serve(async (req) => {
       throw new Error('Cloudflare credentials not configured');
     }
 
-    console.log('[openchat] Starting request to Mistral 7B...');
+    console.log(`[openchat] Starting request to ${modelName}...`);
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch knowledge entries
-    const { data: knowledgeEntries, error: dbError } = await supabase
+    // Fetch knowledge entries filtered by model_id
+    let knowledgeQuery = supabase
       .from('knowledge_entries')
       .select('*')
       .order('created_at', { ascending: true });
+    
+    if (modelId) {
+      knowledgeQuery = knowledgeQuery.eq('model_id', modelId);
+    }
+    
+    const { data: knowledgeEntries, error: dbError } = await knowledgeQuery;
 
     if (dbError) {
       console.error('[openchat] Error fetching knowledge:', dbError);
@@ -53,7 +59,7 @@ serve(async (req) => {
       ...messages,
     ];
 
-    console.log('[openchat] Calling Cloudflare Workers AI Mistral 7B...');
+    console.log(`[openchat] Calling Cloudflare Workers AI ${modelName}...`);
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
@@ -64,7 +70,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: '@cf/mistral/mistral-7b-instruct-v0.1',
+          model: modelName,
           messages: chatMessages,
           stream: false,
         }),
@@ -73,7 +79,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[openchat] Mistral 7B error:', response.status, errorText);
+      console.error(`[openchat] ${modelName} error:`, response.status, errorText);
       return new Response(
         JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
