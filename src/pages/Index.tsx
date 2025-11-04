@@ -11,6 +11,7 @@ import { AdminPanel } from "@/components/AdminPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
+import { BrowserModelSelector } from "@/components/BrowserModelSelector";
 import { generateText } from "@/services/browserAI";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -482,10 +483,16 @@ const Index = () => {
           <div className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         {viewMode === "chat" ? (
           <div className="space-y-4">
-            <ModelSelector 
-              selectedModelId={selectedModelId}
-              onSelectModel={setSelectedModelId}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ModelSelector 
+                selectedModelId={selectedModelId}
+                onSelectModel={setSelectedModelId}
+              />
+              <BrowserModelSelector 
+                selectedModelId={selectedModelId}
+                onSelectModel={setSelectedModelId}
+              />
+            </div>
           <Card className="h-[calc(100vh-18rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">

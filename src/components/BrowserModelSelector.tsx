@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
-import { Cpu, Sparkles } from "lucide-react";
+import { Globe, Sparkles } from "lucide-react";
 
 interface Model {
   id: string;
@@ -16,12 +16,12 @@ interface Model {
   is_active: boolean;
 }
 
-interface ModelSelectorProps {
+interface BrowserModelSelectorProps {
   selectedModelId: string | null;
   onSelectModel: (modelId: string) => void;
 }
 
-export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorProps) => {
+export const BrowserModelSelector = ({ selectedModelId, onSelectModel }: BrowserModelSelectorProps) => {
   const [models, setModels] = useState<Model[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,22 +35,16 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
       .select("*")
       .eq("is_active", true)
       .eq("type", "text-generation")
-      .or("model_id.like.@cf/%,model_id.like.@hf/%")
+      .not("model_id", "like", "@cf/%")
+      .not("model_id", "like", "@hf/%")
       .order("parameters", { ascending: true });
 
     if (error) {
-      console.error("Error fetching models:", error);
+      console.error("Error fetching browser models:", error);
       return;
     }
 
     setModels(data || []);
-    
-    // Auto-select Mistral 7B as default if none selected
-    if (data && data.length > 0 && !selectedModelId) {
-      const mistralModel = data.find(m => m.name === 'mistral-7b-instruct');
-      onSelectModel(mistralModel ? mistralModel.id : data[0].id);
-    }
-    
     setIsLoading(false);
   };
 
@@ -60,17 +54,17 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
     <Card className="p-4 bg-card/30 border-border">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">API Models</h3>
+          <Globe className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Browser Models</h3>
           <Badge variant="outline" className="ml-auto">
             <Sparkles className="w-3 h-3 mr-1" />
-            Cloud
+            Local
           </Badge>
         </div>
 
         <Select value={selectedModelId || undefined} onValueChange={onSelectModel} disabled={isLoading}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a model..." />
+            <SelectValue placeholder="Select a browser model..." />
           </SelectTrigger>
           <SelectContent>
             {models.map((model) => (
@@ -93,8 +87,8 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
         )}
 
         <div className="text-xs text-muted-foreground flex items-center gap-1">
-          <Cpu className="w-3 h-3" />
-          <span>Cloudflare Workers AI • Fast & Scalable</span>
+          <Globe className="w-3 h-3" />
+          <span>Runs in your browser • No API costs • 100% Private</span>
         </div>
       </div>
     </Card>
