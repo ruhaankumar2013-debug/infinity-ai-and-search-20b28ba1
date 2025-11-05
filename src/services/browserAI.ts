@@ -36,53 +36,37 @@ export const generateText = async (
     // Initialize or reuse pipeline
     if (!currentPipeline || currentModelId !== options.model) {
       console.log(`Loading model: ${options.model}`);
-      try {
-        currentPipeline = await pipeline(
-          'text-generation',
-          options.model,
-          { device: 'webgpu' }
-        );
-      } catch (e) {
-        console.warn('WebGPU init failed, falling back to WASM:', e);
-        currentPipeline = await pipeline(
-          'text-generation',
-          options.model,
-          { device: 'wasm' }
-        );
-      }
-
+      
+      currentPipeline = await pipeline('text-generation', options.model);
       currentModelId = options.model;
     }
 
-    const messages = [];
+    // Build prompt with system message if provided
+    let fullPrompt = prompt;
     if (options.systemPrompt) {
-      messages.push({ role: 'system', content: options.systemPrompt });
+      fullPrompt = `${options.systemPrompt}\n\nUser: ${prompt}\n\nAssistant:`;
     }
-    messages.push({ role: 'user', content: prompt });
 
-    // Generate with streaming if callback provided
+    // Generate text
+    const result = await currentPipeline(fullPrompt, {
+      max_new_tokens: options.maxTokens || 256,
+      temperature: options.temperature || 0.7,
+      do_sample: true,
+      top_k: 50,
+      top_p: 0.9,
+    });
+    
+    const generatedText = result[0].generated_text;
+    
+    // Remove the prompt from output to get just the response
+    const response = generatedText.slice(fullPrompt.length).trim();
+    
+    // If streaming callback provided, send the full response at once
     if (onToken) {
-      const result = await currentPipeline(prompt, {
-        max_new_tokens: options.maxTokens || 512,
-        temperature: options.temperature || 0.7,
-        do_sample: true,
-        streamer: (token: any) => {
-          if (token && typeof token === 'string') {
-            onToken(token);
-          }
-        }
-      });
-      
-      return result[0].generated_text;
-    } else {
-      const result = await currentPipeline(prompt, {
-        max_new_tokens: options.maxTokens || 512,
-        temperature: options.temperature || 0.7,
-        do_sample: true,
-      });
-      
-      return result[0].generated_text;
+      onToken(response);
     }
+    
+    return response;
   } catch (error) {
     console.error('Error generating text:', error);
     throw new Error(`Failed to generate text: ${error instanceof Error ? error.message : 'Unknown error'}`);
