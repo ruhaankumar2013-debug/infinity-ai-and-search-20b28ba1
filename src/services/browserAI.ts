@@ -6,6 +6,11 @@ env.useBrowserCache = true;
 
 // Note: HuggingFace token can be set via VITE_HUGGING_FACE_TOKEN env variable
 // Some models may require authentication - get token from https://huggingface.co/settings/tokens
+const HF_TOKEN = (import.meta as any).env?.VITE_HUGGING_FACE_TOKEN;
+if (HF_TOKEN) {
+  // @ts-ignore - transformers.js env allows HF_TOKEN at runtime
+  (env as any).HF_TOKEN = HF_TOKEN;
+}
 
 interface TextGenerationOptions {
   model: string;
@@ -31,11 +36,21 @@ export const generateText = async (
     // Initialize or reuse pipeline
     if (!currentPipeline || currentModelId !== options.model) {
       console.log(`Loading model: ${options.model}`);
-      currentPipeline = await pipeline(
-        'text-generation',
-        options.model,
-        { device: 'webgpu' }
-      );
+      try {
+        currentPipeline = await pipeline(
+          'text-generation',
+          options.model,
+          { device: 'webgpu' }
+        );
+      } catch (e) {
+        console.warn('WebGPU init failed, falling back to WASM:', e);
+        currentPipeline = await pipeline(
+          'text-generation',
+          options.model,
+          { device: 'wasm' }
+        );
+      }
+
       currentModelId = options.model;
     }
 
