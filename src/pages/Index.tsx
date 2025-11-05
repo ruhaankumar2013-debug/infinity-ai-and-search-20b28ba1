@@ -305,28 +305,46 @@ const Index = () => {
     } else {
       // Use browser AI for local models
       try {
-        // Generate with streaming
-        await generateText(
-          lastUserMessage.content,
-          {
-            model: modelData.model_id,
-            systemPrompt,
-            maxTokens: 512,
-            temperature: 0.7,
-          },
-          (token: string) => {
-            assistantContent += token;
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role === "assistant") {
-                return prev.map((m, i) =>
-                  i === prev.length - 1 ? { ...m, content: assistantContent } : m
-                );
-              }
-              return [...prev, { role: "assistant", content: assistantContent }];
-            });
-          }
-        );
+        const isPhi = /phi[-\s]?3/i.test(modelData.display_name) || /phi[-\s]?3/i.test(modelData.model_id);
+        const maxTokens = isPhi ? 128 : 512; // keep Phi lightweight to avoid browser crashes
+
+        if (isPhi) {
+          // Safer non-streaming path for Phi to reduce memory/GC pressure
+          const full = await generateText(
+            lastUserMessage.content,
+            {
+              model: modelData.model_id,
+              systemPrompt,
+              maxTokens,
+              temperature: 0.7,
+            }
+          );
+          assistantContent = full;
+          setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+        } else {
+          // Stream for smaller models
+          await generateText(
+            lastUserMessage.content,
+            {
+              model: modelData.model_id,
+              systemPrompt,
+              maxTokens,
+              temperature: 0.7,
+            },
+            (token: string) => {
+              assistantContent += token;
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant") {
+                  return prev.map((m, i) =>
+                    i === prev.length - 1 ? { ...m, content: assistantContent } : m
+                  );
+                }
+                return [...prev, { role: "assistant", content: assistantContent }];
+              });
+            }
+          );
+        }
       } catch (error) {
         console.error("Browser AI error:", error);
         
