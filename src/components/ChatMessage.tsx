@@ -4,9 +4,10 @@ import { Bot, User } from "lucide-react";
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
+  imageUrl?: string;
 }
 
-export const ChatMessage = ({ role, content }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, imageUrl }: ChatMessageProps) => {
   return (
     <div
       className={cn(
@@ -28,6 +29,15 @@ export const ChatMessage = ({ role, content }: ChatMessageProps) => {
       </div>
       <div className="flex-1 pt-1">
         <p className="text-sm text-foreground whitespace-pre-wrap">{content}</p>
+        {imageUrl && (
+          <div className="mt-3">
+            <img 
+              src={imageUrl} 
+              alt="Generated image" 
+              className="rounded-lg max-w-full h-auto shadow-lg"
+            />
+          </div>
+        )}
       </div>
     </div>
   );

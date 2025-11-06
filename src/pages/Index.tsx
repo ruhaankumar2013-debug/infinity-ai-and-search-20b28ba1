@@ -18,6 +18,7 @@ import type { User, Session } from "@supabase/supabase-js";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  imageUrl?: string;
 }
 
 interface Conversation {
@@ -279,8 +280,25 @@ const Index = () => {
 
     let assistantContent = "";
 
+    // Check if this is an image generation model
+    if (modelData.type === 'image-generation') {
+      try {
+        const { data, error } = await supabase.functions.invoke('generate-image', {
+          body: { prompt: lastUserMessage.content }
+        });
+
+        if (error) throw error;
+
+        const imageUrl = data.imageUrl;
+        assistantContent = "Generated image based on your prompt.";
+        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent, imageUrl }]);
+      } catch (error) {
+        console.error("Image generation error:", error);
+        throw new Error(`Failed to generate image. Please try again.`);
+      }
+    }
     // Check if this is a Cloudflare Workers AI model (starts with @cf/)
-    if (modelData.model_id.startsWith('@cf/')) {
+    else if (modelData.model_id.startsWith('@cf/')) {
       // Use edge function for Cloudflare Workers AI models
       try {
         const { data, error } = await supabase.functions.invoke('openchat', {
@@ -500,7 +518,7 @@ const Index = () => {
                 </div>
               )}
               {messages.map((msg, idx) => (
-                <ChatMessage key={idx} role={msg.role} content={msg.content} />
+                <ChatMessage key={idx} role={msg.role} content={msg.content} imageUrl={msg.imageUrl} />
               ))}
               {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex gap-3 p-4 rounded-lg bg-card mr-8">
