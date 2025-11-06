@@ -34,10 +34,10 @@ export const BrowserModelSelector = ({ selectedModelId, onSelectModel }: Browser
       .from("models")
       .select("*")
       .eq("is_active", true)
-      .eq("type", "text-generation")
+      .in("type", ["text-generation", "image-generation"])
       .not("model_id", "like", "@cf/%")
       .not("model_id", "like", "@hf/%")
-      .order("parameters", { ascending: true });
+      .order("type", { ascending: true });
 
     if (error) {
       console.error("Error fetching browser models:", error);
@@ -72,7 +72,7 @@ export const BrowserModelSelector = ({ selectedModelId, onSelectModel }: Browser
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{model.display_name}</span>
                   <Badge variant="secondary" className="text-xs">
-                    {model.parameters}
+                    {model.type === "image-generation" ? "Image" : model.parameters}
                   </Badge>
                 </div>
               </SelectItem>
