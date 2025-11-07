@@ -177,6 +177,7 @@ const Index = () => {
     const formattedMessages = (data || []).map((msg) => ({
       role: msg.role as "user" | "assistant",
       content: msg.content,
+      imageUrl: msg.image_url,
     }));
 
     setMessages(formattedMessages);
@@ -279,6 +280,7 @@ const Index = () => {
     }
 
     let assistantContent = "";
+    let imageUrl: string | undefined = undefined;
 
     // Check if this is an image generation model
     if (modelData.type === 'image-generation') {
@@ -289,7 +291,7 @@ const Index = () => {
 
         if (error) throw error;
 
-        const imageUrl = data.imageUrl;
+        imageUrl = data.imageUrl;
         assistantContent = "Generated image based on your prompt.";
         setMessages((prev) => [...prev, { role: "assistant", content: assistantContent, imageUrl }]);
       } catch (error) {
@@ -350,11 +352,17 @@ const Index = () => {
 
     // Save the complete assistant message to database
     if (assistantContent) {
-      await supabase.from("messages").insert({
+      const insertData: any = {
         conversation_id: conversationId,
         role: "assistant",
         content: assistantContent,
-      });
+      };
+      
+      if (imageUrl) {
+        insertData.image_url = imageUrl;
+      }
+      
+      await supabase.from("messages").insert(insertData);
     }
   };
 
