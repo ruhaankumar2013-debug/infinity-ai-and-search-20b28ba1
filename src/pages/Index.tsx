@@ -11,8 +11,6 @@ import { AdminPanel } from "@/components/AdminPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
-import { BrowserModelSelector } from "@/components/BrowserModelSelector";
-import { generateText } from "@/services/browserAI";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface Message {
@@ -237,7 +235,7 @@ const Index = () => {
       .eq("id", conversationId);
   };
 
-  const generateWithBrowserAI = async (messages: Message[], conversationId: string) => {
+  const generateWithAI = async (messages: Message[], conversationId: string) => {
     if (!selectedModelId) {
       toast({
         title: "No model selected",
@@ -301,7 +299,6 @@ const Index = () => {
     }
     // Check if this is a Cloudflare Workers AI model (starts with @cf/)
     else if (modelData.model_id.startsWith('@cf/')) {
-      // Use edge function for Cloudflare Workers AI models
       try {
         const { data, error } = await supabase.functions.invoke('openchat', {
           body: { 
@@ -323,31 +320,7 @@ const Index = () => {
         throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
       }
     } else {
-      // Use browser AI for local models
-      try {
-        const response = await generateText(
-          lastUserMessage.content,
-          {
-            model: modelData.model_id,
-            systemPrompt,
-            maxTokens: 256,
-            temperature: 0.7,
-          }
-        );
-        
-        assistantContent = response;
-        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
-      } catch (error) {
-        console.error("Browser AI error:", error);
-        
-        // Show helpful error message
-        toast({
-          title: "Browser model error",
-          description: "This model can’t be loaded in the browser (likely gated or unsupported). Try TinyLlama or Qwen2 0.5B, or use Mistral 7B Instruct.",
-          variant: "destructive",
-        });
-        throw new Error("Failed to generate response. Switch to a public browser model (e.g., TinyLlama/Qwen2 0.5B) or use Mistral 7B Instruct.");
-      }
+      throw new Error("Unsupported model type");
     }
 
     // Save the complete assistant message to database
@@ -412,7 +385,7 @@ const Index = () => {
     }
 
     try {
-      await generateWithBrowserAI(newMessages, conversationId);
+      await generateWithAI(newMessages, conversationId);
       fetchConversations(); // Refresh to update timestamps
     } catch (error) {
       console.error("Error sending message:", error);
@@ -459,7 +432,7 @@ const Index = () => {
                   </div>
                   <div>
                     <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
-                    <p className="text-xs text-muted-foreground">Apache 2.0 Models • Browser AI</p>
+                    <p className="text-xs text-muted-foreground">Apache 2.0 Models • Cloudflare AI</p>
                   </div>
                 </div>
                 
@@ -499,16 +472,10 @@ const Index = () => {
           <div className="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         {viewMode === "chat" ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ModelSelector 
-                selectedModelId={selectedModelId}
-                onSelectModel={setSelectedModelId}
-              />
-              <BrowserModelSelector 
-                selectedModelId={selectedModelId}
-                onSelectModel={setSelectedModelId}
-              />
-            </div>
+            <ModelSelector 
+              selectedModelId={selectedModelId}
+              onSelectModel={setSelectedModelId}
+            />
           <Card className="h-[calc(100vh-18rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
