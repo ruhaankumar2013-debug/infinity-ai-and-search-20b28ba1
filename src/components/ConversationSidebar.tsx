@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Brain } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -9,10 +9,13 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
+  SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 interface Conversation {
@@ -27,6 +30,8 @@ interface ConversationSidebarProps {
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (id: string) => void;
+  researchMode: boolean;
+  onResearchModeChange: (enabled: boolean) => void;
 }
 
 export function ConversationSidebar({
@@ -35,6 +40,8 @@ export function ConversationSidebar({
   onSelectConversation,
   onNewConversation,
   onDeleteConversation,
+  researchMode,
+  onResearchModeChange,
 }: ConversationSidebarProps) {
   const { open } = useSidebar();
 
@@ -93,6 +100,29 @@ export function ConversationSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter className="border-t border-border p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-primary" />
+            {open && (
+              <Label htmlFor="research-mode" className="text-sm font-medium cursor-pointer">
+                Research Mode
+              </Label>
+            )}
+          </div>
+          <Switch
+            id="research-mode"
+            checked={researchMode}
+            onCheckedChange={onResearchModeChange}
+          />
+        </div>
+        {open && researchMode && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Deep thinking enabled for thorough analysis
+          </p>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }

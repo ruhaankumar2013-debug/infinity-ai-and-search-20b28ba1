@@ -46,6 +46,7 @@ const Index = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [researchMode, setResearchMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -307,7 +308,8 @@ const Index = () => {
               { role: "user", content: lastUserMessage.content }
             ],
             modelId: selectedModelId,
-            modelName: modelData.model_id
+            modelName: modelData.model_id,
+            researchMode
           }
         });
 
@@ -416,6 +418,8 @@ const Index = () => {
           onSelectConversation={setCurrentConversationId}
           onNewConversation={createNewConversation}
           onDeleteConversation={deleteConversation}
+          researchMode={researchMode}
+          onResearchModeChange={setResearchMode}
         />
 
         <div className="flex-1 flex flex-col">

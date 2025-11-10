@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, modelId, modelName } = await req.json();
+    const { messages, modelId, modelName, researchMode } = await req.json();
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
 
@@ -51,11 +51,22 @@ serve(async (req) => {
         .join('\n\n');
     }
 
-    // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant. You must always provide a helpful answer. First, search thoroughly through the knowledge base below for relevant information. If the answer is in the knowledge base, use it. If not found in the knowledge base, use your general knowledge to provide the best possible answer. Never say you don't know - always provide useful information.${knowledgeContext}`;
+    // System prompt with knowledge - enhanced for research mode
+    const basePrompt = researchMode 
+      ? `You are an advanced AI research assistant with deep analytical capabilities. When answering questions:
+
+1. THINK STEP-BY-STEP: Break down complex problems into logical components
+2. ANALYZE THOROUGHLY: Consider multiple perspectives and implications
+3. CITE EVIDENCE: Reference specific information from the knowledge base when available
+4. REASON DEEPLY: Explain your thought process and reasoning
+5. BE COMPREHENSIVE: Provide detailed, well-structured answers with examples
+6. CONSIDER CONTEXT: Think about broader implications and related concepts
+
+First, thoroughly search the knowledge base below for relevant information. If found, integrate it into your detailed analysis. If not found, use your extensive knowledge to provide a comprehensive, well-reasoned answer.${knowledgeContext}`
+      : `You are an intelligent AI assistant. You must always provide a helpful answer. First, search thoroughly through the knowledge base below for relevant information. If the answer is in the knowledge base, use it. If not found in the knowledge base, use your general knowledge to provide the best possible answer. Never say you don't know - always provide useful information.${knowledgeContext}`;
 
     const chatMessages = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: basePrompt },
       ...messages,
     ];
 
