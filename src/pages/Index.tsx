@@ -47,7 +47,7 @@ const Index = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [researchMode, setResearchMode] = useState(false);
-  const [studyMode, setStudyMode] = useState(false);
+  const [studyMode, setStudyMode] = useState(false); // Study mode for learning assistance
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
