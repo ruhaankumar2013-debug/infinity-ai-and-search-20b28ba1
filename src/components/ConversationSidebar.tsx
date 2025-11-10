@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, Trash2, Brain } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Brain, GraduationCap } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +32,8 @@ interface ConversationSidebarProps {
   onDeleteConversation: (id: string) => void;
   researchMode: boolean;
   onResearchModeChange: (enabled: boolean) => void;
+  studyMode: boolean;
+  onStudyModeChange: (enabled: boolean) => void;
 }
 
 export function ConversationSidebar({
@@ -42,6 +44,8 @@ export function ConversationSidebar({
   onDeleteConversation,
   researchMode,
   onResearchModeChange,
+  studyMode,
+  onStudyModeChange,
 }: ConversationSidebarProps) {
   const { open } = useSidebar();
 
@@ -102,26 +106,49 @@ export function ConversationSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-border p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
-            {open && (
-              <Label htmlFor="research-mode" className="text-sm font-medium cursor-pointer">
-                Research Mode
-              </Label>
-            )}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              {open && (
+                <Label htmlFor="research-mode" className="text-sm font-medium cursor-pointer">
+                  Research Mode
+                </Label>
+              )}
+            </div>
+            <Switch
+              id="research-mode"
+              checked={researchMode}
+              onCheckedChange={onResearchModeChange}
+            />
           </div>
-          <Switch
-            id="research-mode"
-            checked={researchMode}
-            onCheckedChange={onResearchModeChange}
-          />
+          {open && researchMode && (
+            <p className="text-xs text-muted-foreground">
+              Deep thinking enabled for thorough analysis
+            </p>
+          )}
+          
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <GraduationCap className="h-4 w-4 text-primary" />
+              {open && (
+                <Label htmlFor="study-mode" className="text-sm font-medium cursor-pointer">
+                  Study Mode
+                </Label>
+              )}
+            </div>
+            <Switch
+              id="study-mode"
+              checked={studyMode}
+              onCheckedChange={onStudyModeChange}
+            />
+          </div>
+          {open && studyMode && (
+            <p className="text-xs text-muted-foreground">
+              Get study assistance and personalized plans
+            </p>
+          )}
         </div>
-        {open && researchMode && (
-          <p className="text-xs text-muted-foreground mt-2">
-            Deep thinking enabled for thorough analysis
-          </p>
-        )}
       </SidebarFooter>
     </Sidebar>
   );

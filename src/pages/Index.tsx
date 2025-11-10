@@ -47,6 +47,7 @@ const Index = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [researchMode, setResearchMode] = useState(false);
+  const [studyMode, setStudyMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -309,7 +310,8 @@ const Index = () => {
             ],
             modelId: selectedModelId,
             modelName: modelData.model_id,
-            researchMode
+            researchMode,
+            studyMode
           }
         });
 
@@ -420,6 +422,8 @@ const Index = () => {
           onDeleteConversation={deleteConversation}
           researchMode={researchMode}
           onResearchModeChange={setResearchMode}
+          studyMode={studyMode}
+          onStudyModeChange={setStudyMode}
         />
 
         <div className="flex-1 flex flex-col">
