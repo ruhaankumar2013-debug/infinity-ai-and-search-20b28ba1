@@ -26,6 +26,12 @@ interface Exam {
   notes: string;
 }
 
+interface Model {
+  id: string;
+  model_id: string;
+  name: string;
+}
+
 const NCERT_SUBJECTS = {
   "Science": ["Chemical Reactions", "Acids Bases and Salts", "Metals and Non-metals", "Carbon and its Compounds", "Life Processes", "Control and Coordination", "Reproduction", "Heredity and Evolution", "Light Reflection and Refraction", "Electricity", "Magnetic Effects of Current"],
   "Mathematics": ["Real Numbers", "Polynomials", "Linear Equations", "Quadratic Equations", "Arithmetic Progressions", "Triangles", "Coordinate Geometry", "Trigonometry", "Circles", "Surface Areas and Volumes", "Statistics", "Probability"],
@@ -43,6 +49,7 @@ const StudyMode = () => {
   const [selectedSubject, setSelectedSubject] = useState<string>("");
   const [selectedChapter, setSelectedChapter] = useState<string>("");
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
   const [examDialogOpen, setExamDialogOpen] = useState(false);
   const [newExamSubject, setNewExamSubject] = useState("");
@@ -52,6 +59,25 @@ const StudyMode = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Fetch selected model details when modelId changes
+  useEffect(() => {
+    const fetchModelDetails = async () => {
+      if (!selectedModelId) return;
+      
+      const { data, error } = await supabase
+        .from('models')
+        .select('id, model_id, name')
+        .eq('id', selectedModelId)
+        .single();
+      
+      if (!error && data) {
+        setSelectedModel(data);
+      }
+    };
+    
+    fetchModelDetails();
+  }, [selectedModelId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -120,9 +146,21 @@ const StudyMode = () => {
     setIsLoading(true);
     
     try {
+      if (!selectedModel) {
+        toast({
+          title: "No model selected",
+          description: "Please select an AI model first.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("openchat", {
         body: {
           messages: [...messages, { role: "user", content: message }],
+          modelId: selectedModel.id,
+          modelName: selectedModel.model_id,
           studyMode: true,
         },
       });
@@ -157,6 +195,15 @@ const StudyMode = () => {
       return;
     }
 
+    if (!selectedModel) {
+      toast({
+        title: "No model selected",
+        description: "Please select an AI model first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     const userMessage: Message = {
       role: "user",
@@ -169,6 +216,8 @@ const StudyMode = () => {
       const { data, error } = await supabase.functions.invoke("openchat", {
         body: {
           messages: [...messages, userMessage],
+          modelId: selectedModel.id,
+          modelName: selectedModel.model_id,
           studyMode: true,
         },
       });
@@ -215,10 +264,22 @@ const StudyMode = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
 
+    if (!selectedModel) {
+      toast({
+        title: "No model selected",
+        description: "Please select an AI model first.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke("openchat", {
         body: {
           messages: [...messages, userMessage],
+          modelId: selectedModel.id,
+          modelName: selectedModel.model_id,
           studyMode: true,
         },
       });
