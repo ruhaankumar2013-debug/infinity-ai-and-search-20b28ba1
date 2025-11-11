@@ -32,12 +32,71 @@ interface Model {
   name: string;
 }
 
-const NCERT_SUBJECTS = {
-  "Science": ["Chemical Reactions", "Acids Bases and Salts", "Metals and Non-metals", "Carbon and its Compounds", "Life Processes", "Control and Coordination", "Reproduction", "Heredity and Evolution", "Light Reflection and Refraction", "Electricity", "Magnetic Effects of Current"],
-  "Mathematics": ["Real Numbers", "Polynomials", "Linear Equations", "Quadratic Equations", "Arithmetic Progressions", "Triangles", "Coordinate Geometry", "Trigonometry", "Circles", "Surface Areas and Volumes", "Statistics", "Probability"],
-  "Social Science": ["India and the Contemporary World", "Contemporary India", "Democratic Politics", "Understanding Economic Development"],
-  "English": ["First Flight", "Footprints Without Feet", "Writing Skills", "Grammar"],
-  "Hindi": ["Kshitiz", "Kritika", "Sparsh", "Sanchayan"]
+// NCERT Curriculum organized by grade
+const NCERT_CURRICULUM: Record<string, Record<string, string[]>> = {
+  "6": {
+    "Science": ["Food: Where Does it Come From?", "Components of Food", "Fibre to Fabric", "Sorting Materials into Groups", "Separation of Substances", "Changes Around Us", "Getting to Know Plants", "Body Movements", "The Living Organisms", "Motion and Measurement", "Light Shadows and Reflections", "Electricity and Circuits", "Fun with Magnets", "Water", "Air Around Us", "Garbage In Garbage Out"],
+    "Mathematics": ["Knowing Our Numbers", "Whole Numbers", "Playing with Numbers", "Basic Geometrical Ideas", "Understanding Elementary Shapes", "Integers", "Fractions", "Decimals", "Data Handling", "Mensuration", "Algebra", "Ratio and Proportion", "Symmetry", "Practical Geometry"],
+    "Social Science": ["What Where How and When", "From Hunting Gathering to Growing Food", "In the Earliest Cities", "What Books and Burials Tell Us", "Kingdoms Kings and Early Republic", "New Questions and Ideas", "Ashoka The Emperor Who Gave Up War", "Vital Villages Thriving Towns", "The Earth in the Solar System", "Globe Latitudes and Longitudes", "Motions of the Earth", "Maps", "Major Domains of the Earth", "Understanding Diversity", "Diversity and Discrimination", "What is Government", "Key Elements of a Democratic Government", "Panchayati Raj", "Rural Administration", "Urban Administration", "Rural Livelihoods", "Urban Livelihoods"],
+    "English": ["A Pact with the Sun", "Honeysuckle", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Vasant", "Durva", "Bal Ram Katha"]
+  },
+  "7": {
+    "Science": ["Nutrition in Plants", "Nutrition in Animals", "Fibre to Fabric", "Heat", "Acids Bases and Salts", "Physical and Chemical Changes", "Weather Climate and Adaptations", "Winds Storms and Cyclones", "Soil", "Respiration in Organisms", "Transportation in Animals and Plants", "Reproduction in Plants", "Motion and Time", "Electric Current and its Effects", "Light", "Water A Precious Resource", "Forests Our Lifeline", "Wastewater Story"],
+    "Mathematics": ["Integers", "Fractions and Decimals", "Data Handling", "Simple Equations", "Lines and Angles", "The Triangle and its Properties", "Congruence of Triangles", "Comparing Quantities", "Rational Numbers", "Practical Geometry", "Perimeter and Area", "Algebraic Expressions", "Exponents and Powers", "Symmetry", "Visualising Solid Shapes"],
+    "Social Science": ["Tracing Changes Through a Thousand Years", "New Kings and Kingdoms", "The Delhi Sultans", "The Mughal Empire", "Rulers and Buildings", "Towns Traders and Craftspersons", "Tribes Nomads and Settled Communities", "Devotional Paths to the Divine", "The Making of Regional Cultures", "Eighteenth Century Political Formations", "Environment", "Inside Our Earth", "Our Changing Earth", "Air", "Water", "On Equality", "Role of the Government in Health", "How the State Government Works", "Growing up as Boys and Girls", "Women Change the World", "Understanding Advertising", "Markets Around Us", "A Shirt in the Market"],
+    "English": ["An Alien Hand", "Honeycomb", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Vasant", "Durva", "Mahabharat"]
+  },
+  "8": {
+    "Science": ["Crop Production and Management", "Microorganisms Friend and Foe", "Synthetic Fibres and Plastics", "Materials Metals and Non-Metals", "Coal and Petroleum", "Combustion and Flame", "Conservation of Plants and Animals", "Cell Structure and Functions", "Reproduction in Animals", "Reaching the Age of Adolescence", "Force and Pressure", "Friction", "Sound", "Chemical Effects of Electric Current", "Some Natural Phenomena", "Light", "Stars and the Solar System", "Pollution of Air and Water"],
+    "Mathematics": ["Rational Numbers", "Linear Equations in One Variable", "Understanding Quadrilaterals", "Practical Geometry", "Data Handling", "Squares and Square Roots", "Cubes and Cube Roots", "Comparing Quantities", "Algebraic Expressions and Identities", "Visualising Solid Shapes", "Mensuration", "Exponents and Powers", "Direct and Inverse Proportions", "Factorisation", "Introduction to Graphs", "Playing with Numbers"],
+    "Social Science": ["How When and Where", "From Trade to Territory", "Ruling the Countryside", "Tribals Dikus and the Vision of a Golden Age", "When People Rebel", "Colonialism and the City", "Weavers Iron Smelters and Factory Owners", "Civilising the Native Educating the Nation", "Women Caste and Reform", "The Changing World of Visual Arts", "The Making of the National Movement", "India After Independence", "Resources", "Land Soil Water Natural Vegetation and Wildlife Resources", "Mineral and Power Resources", "Agriculture", "Industries", "Human Resources", "The Indian Constitution", "Understanding Secularism", "Why Do We Need a Parliament", "Understanding Laws", "Judiciary", "Understanding Our Criminal Justice System", "Understanding Marginalisation", "Confronting Marginalisation", "Public Facilities", "Law and Social Justice"],
+    "English": ["It So Happened", "Honeydew", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Vasant", "Durva", "Bharat Ki Khoj"]
+  },
+  "9": {
+    "Science": ["Matter in Our Surroundings", "Is Matter Around Us Pure", "Atoms and Molecules", "Structure of the Atom", "The Fundamental Unit of Life", "Tissues", "Diversity in Living Organisms", "Motion", "Force and Laws of Motion", "Gravitation", "Work and Energy", "Sound", "Why Do We Fall Ill", "Natural Resources", "Improvement in Food Resources"],
+    "Mathematics": ["Number Systems", "Polynomials", "Coordinate Geometry", "Linear Equations in Two Variables", "Introduction to Euclids Geometry", "Lines and Angles", "Triangles", "Quadrilaterals", "Areas of Parallelograms and Triangles", "Circles", "Constructions", "Herons Formula", "Surface Areas and Volumes", "Statistics", "Probability"],
+    "Social Science": ["The French Revolution", "Socialism in Europe and the Russian Revolution", "Nazism and the Rise of Hitler", "Forest Society and Colonialism", "Pastoralists in the Modern World", "The Story of Village Palampur", "People as Resource", "Poverty as a Challenge", "Food Security in India", "India Size and Location", "Physical Features of India", "Drainage", "Climate", "Natural Vegetation and Wildlife", "Population", "What is Democracy Why Democracy", "Constitutional Design", "Electoral Politics", "Working of Institutions", "Democratic Rights"],
+    "English": ["Beehive", "Moments", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Kshitiz", "Kritika", "Sparsh", "Sanchayan"]
+  },
+  "10": {
+    "Science": ["Chemical Reactions and Equations", "Acids Bases and Salts", "Metals and Non-metals", "Carbon and its Compounds", "Periodic Classification of Elements", "Life Processes", "Control and Coordination", "How do Organisms Reproduce", "Heredity and Evolution", "Light Reflection and Refraction", "Human Eye and Colourful World", "Electricity", "Magnetic Effects of Electric Current", "Our Environment", "Management of Natural Resources"],
+    "Mathematics": ["Real Numbers", "Polynomials", "Pair of Linear Equations in Two Variables", "Quadratic Equations", "Arithmetic Progressions", "Triangles", "Coordinate Geometry", "Introduction to Trigonometry", "Some Applications of Trigonometry", "Circles", "Constructions", "Areas Related to Circles", "Surface Areas and Volumes", "Statistics", "Probability"],
+    "Social Science": ["The Rise of Nationalism in Europe", "Nationalism in India", "The Making of a Global World", "The Age of Industrialisation", "Print Culture and the Modern World", "Resources and Development", "Forest and Wildlife Resources", "Water Resources", "Agriculture", "Minerals and Energy Resources", "Manufacturing Industries", "Lifelines of National Economy", "Power Sharing", "Federalism", "Democracy and Diversity", "Gender Religion and Caste", "Popular Struggles and Movements", "Political Parties", "Outcomes of Democracy", "Development", "Sectors of the Indian Economy", "Money and Credit", "Globalisation and the Indian Economy", "Consumer Rights"],
+    "English": ["First Flight", "Footprints Without Feet", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Kshitiz", "Kritika", "Sparsh", "Sanchayan"]
+  },
+  "11": {
+    "Physics": ["Physical World", "Units and Measurements", "Motion in a Straight Line", "Motion in a Plane", "Laws of Motion", "Work Energy and Power", "System of Particles and Rotational Motion", "Gravitation", "Mechanical Properties of Solids", "Mechanical Properties of Fluids", "Thermal Properties of Matter", "Thermodynamics", "Kinetic Theory", "Oscillations", "Waves"],
+    "Chemistry": ["Some Basic Concepts of Chemistry", "Structure of Atom", "Classification of Elements and Periodicity in Properties", "Chemical Bonding and Molecular Structure", "States of Matter", "Thermodynamics", "Equilibrium", "Redox Reactions", "Hydrogen", "The s-Block Elements", "The p-Block Elements", "Organic Chemistry Some Basic Principles and Techniques", "Hydrocarbons", "Environmental Chemistry"],
+    "Biology": ["The Living World", "Biological Classification", "Plant Kingdom", "Animal Kingdom", "Morphology of Flowering Plants", "Anatomy of Flowering Plants", "Structural Organisation in Animals", "Cell The Unit of Life", "Biomolecules", "Cell Cycle and Cell Division", "Transport in Plants", "Mineral Nutrition", "Photosynthesis in Higher Plants", "Respiration in Plants", "Plant Growth and Development", "Digestion and Absorption", "Breathing and Exchange of Gases", "Body Fluids and Circulation", "Excretory Products and their Elimination", "Locomotion and Movement", "Neural Control and Coordination", "Chemical Coordination and Integration"],
+    "Mathematics": ["Sets", "Relations and Functions", "Trigonometric Functions", "Principle of Mathematical Induction", "Complex Numbers and Quadratic Equations", "Linear Inequalities", "Permutations and Combinations", "Binomial Theorem", "Sequences and Series", "Straight Lines", "Conic Sections", "Introduction to Three Dimensional Geometry", "Limits and Derivatives", "Mathematical Reasoning", "Statistics", "Probability"],
+    "Accountancy": ["Introduction to Accounting", "Theory Base of Accounting", "Recording of Transactions I", "Recording of Transactions II", "Bank Reconciliation Statement", "Trial Balance and Rectification of Errors", "Depreciation Provisions and Reserves", "Bill of Exchange", "Financial Statements I", "Financial Statements II", "Accounts from Incomplete Records", "Applications of Computers in Accounting", "Computerised Accounting System"],
+    "Business Studies": ["Nature and Purpose of Business", "Forms of Business Organisation", "Public Private and Global Enterprises", "Business Services", "Emerging Modes of Business", "Social Responsibilities of Business and Business Ethics", "Formation of a Company", "Sources of Business Finance", "Small Business", "Internal Trade", "International Business"],
+    "Economics": ["Introduction", "Theory of Consumer Behaviour", "Production and Costs", "The Theory of the Firm under Perfect Competition", "Market Equilibrium", "Non-competitive Markets", "Introduction to Macroeconomics", "National Income Accounting", "Money and Banking", "Determination of Income and Employment", "Government Budget and the Economy", "Open Economy Macroeconomics", "Indian Economy on the Eve of Independence", "Indian Economy 1950-1990", "Liberalisation Privatisation and Globalisation", "Poverty", "Human Capital Formation in India", "Rural Development", "Employment", "Infrastructure", "Environment and Sustainable Development", "Comparative Development Experiences of India with its Neighbours"],
+    "Political Science": ["Constitution Why and How", "Rights in the Indian Constitution", "Election and Representation", "Executive", "Legislature", "Judiciary", "Federalism", "Local Governments", "Constitution as a Living Document", "The Philosophy of the Constitution", "Political Theory An Introduction", "Freedom", "Equality", "Social Justice", "Rights", "Citizenship", "Nationalism", "Secularism", "Peace", "Development"],
+    "History": ["From the Beginning of Time", "Writing and City Life", "An Empire Across Three Continents", "The Central Islamic Lands", "Nomadic Empires", "The Three Orders", "Changing Cultural Traditions", "Confrontation of Cultures", "Paths to Modernisation", "Displacing Indigenous Peoples", "Paths to Modernisation"],
+    "Geography": ["India Location", "Structure and Relief", "Drainage System", "Climate", "Natural Vegetation", "Soils", "Natural Hazards and Disasters", "The Origin and Evolution of the Earth", "Landforms and their Evolution", "Climate", "Water in the Atmosphere", "World Climate and Climate Change", "Water Oceans", "Biodiversity and Conservation", "Indian Economy"],
+    "English": ["Hornbill", "Snapshots", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Aroh", "Vitan", "Antra"]
+  },
+  "12": {
+    "Physics": ["Electric Charges and Fields", "Electrostatic Potential and Capacitance", "Current Electricity", "Moving Charges and Magnetism", "Magnetism and Matter", "Electromagnetic Induction", "Alternating Current", "Electromagnetic Waves", "Ray Optics and Optical Instruments", "Wave Optics", "Dual Nature of Radiation and Matter", "Atoms", "Nuclei", "Semiconductor Electronics Materials Devices and Simple Circuits", "Communication Systems"],
+    "Chemistry": ["The Solid State", "Solutions", "Electrochemistry", "Chemical Kinetics", "Surface Chemistry", "General Principles and Processes of Isolation of Elements", "The p-Block Elements", "The d and f Block Elements", "Coordination Compounds", "Haloalkanes and Haloarenes", "Alcohols Phenols and Ethers", "Aldehydes Ketones and Carboxylic Acids", "Amines", "Biomolecules", "Polymers", "Chemistry in Everyday Life"],
+    "Biology": ["Reproduction in Organisms", "Sexual Reproduction in Flowering Plants", "Human Reproduction", "Reproductive Health", "Principles of Inheritance and Variation", "Molecular Basis of Inheritance", "Evolution", "Human Health and Disease", "Strategies for Enhancement in Food Production", "Microbes in Human Welfare", "Biotechnology Principles and Processes", "Biotechnology and its Applications", "Organisms and Populations", "Ecosystem", "Biodiversity and Conservation", "Environmental Issues"],
+    "Mathematics": ["Relations and Functions", "Inverse Trigonometric Functions", "Matrices", "Determinants", "Continuity and Differentiability", "Application of Derivatives", "Integrals", "Application of Integrals", "Differential Equations", "Vector Algebra", "Three Dimensional Geometry", "Linear Programming", "Probability"],
+    "Accountancy": ["Accounting for Not for Profit Organisation", "Accounting for Partnership Basic Concepts", "Reconstitution of a Partnership Firm Admission of a Partner", "Reconstitution of a Partnership Firm Retirement Death of a Partner", "Dissolution of Partnership Firm", "Accounting for Share Capital", "Issue and Redemption of Debentures", "Financial Statements of a Company", "Analysis of Financial Statements", "Accounting Ratios", "Cash Flow Statement"],
+    "Business Studies": ["Nature and Significance of Management", "Principles of Management", "Business Environment", "Planning", "Organising", "Staffing", "Directing", "Controlling", "Financial Management", "Financial Markets", "Marketing Management", "Consumer Protection"],
+    "Economics": ["Introduction to Microeconomics", "Theory of Consumer Behaviour", "Production and Costs", "The Theory of the Firm under Perfect Competition", "Market Equilibrium", "Competition and Non-competitive Markets", "Introduction to Macroeconomics and its Concepts", "National Income and Related Aggregates", "Money and Banking", "Determination of Income and Employment", "Government Budget and the Economy", "Balance of Payments", "The Experience of Growth Development and Happiness", "India on the Eve of Independence", "Indian Economy in 1950-1990", "Economic Reforms Since 1991", "Poverty", "Human Capital Formation in India", "Rural Development", "Employment", "Sustainable Economic Development", "Development Experience of India"],
+    "Political Science": ["Challenges of Nation Building", "Era of One Party Dominance", "Politics of Planned Development", "Indias External Relations", "Challenges to and Restoration of Congress System", "The Crisis of Democratic Order", "Rise of Popular Movements", "Regional Aspirations", "Recent Developments in Indian Politics", "The Cold War Era", "The End of Bipolarity", "US Hegemony in World Politics", "Alternative Centres of Power", "Contemporary South Asia", "International Organisations", "Security in the Contemporary World", "Environment and Natural Resources", "Globalisation"],
+    "History": ["Bricks Beads and Bones", "Kings Farmers and Towns", "Kinship Caste and Class", "Thinkers Beliefs and Buildings", "Through the Eyes of Travellers", "Bhakti Sufi Traditions", "An Imperial Capital Vijayanagara", "Peasants Zamindars and the State", "Kings and Chronicles", "Colonialism and the Countryside", "Rebels and the Raj", "Colonial Cities", "Mahatma Gandhi and the Nationalist Movement", "Framing the Constitution", "Understanding Partition"],
+    "Geography": ["Human Geography Nature and Scope", "The World Population", "Human Development", "Primary Activities", "Secondary Activities", "Tertiary and Quaternary Activities", "Transport and Communication", "International Trade", "Human Settlements", "Population Distribution Density Growth and Composition", "Human Development", "Primary Activities", "Secondary Activities", "Tertiary and Quaternary Activities", "Transport Communication and Trade", "Human Settlements", "Data Processing", "Spatial Information Technology"],
+    "English": ["Flamingo", "Vistas", "Reading", "Writing", "Grammar"],
+    "Hindi": ["Aroh", "Vitan", "Antra"]
+  }
 };
 
 const StudyMode = () => {
@@ -395,7 +454,11 @@ const StudyMode = () => {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <GraduationCap className="h-4 w-4 text-muted-foreground" />
-              <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+              <Select value={selectedGrade} onValueChange={(val) => {
+                setSelectedGrade(val);
+                setSelectedSubject("");
+                setSelectedChapter("");
+              }}>
                 <SelectTrigger className="w-32">
                   <SelectValue placeholder="Grade" />
                 </SelectTrigger>
@@ -421,7 +484,7 @@ const StudyMode = () => {
                   <SelectValue placeholder="Subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.keys(NCERT_SUBJECTS).map((subject) => (
+                  {Object.keys(NCERT_CURRICULUM[selectedGrade] || {}).map((subject) => (
                     <SelectItem key={subject} value={subject}>
                       {subject}
                     </SelectItem>
@@ -430,13 +493,13 @@ const StudyMode = () => {
               </Select>
             </div>
 
-            {selectedSubject && (
+            {selectedSubject && NCERT_CURRICULUM[selectedGrade]?.[selectedSubject] && (
               <Select value={selectedChapter} onValueChange={handleChapterSelect}>
                 <SelectTrigger className="w-64">
                   <SelectValue placeholder="Select Chapter" />
                 </SelectTrigger>
-                <SelectContent>
-                  {NCERT_SUBJECTS[selectedSubject as keyof typeof NCERT_SUBJECTS].map((chapter) => (
+                <SelectContent className="bg-popover z-50">
+                  {NCERT_CURRICULUM[selectedGrade][selectedSubject].map((chapter) => (
                     <SelectItem key={chapter} value={chapter}>
                       {chapter}
                     </SelectItem>
