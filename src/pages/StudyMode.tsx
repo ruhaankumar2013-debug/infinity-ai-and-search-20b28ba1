@@ -7,6 +7,7 @@ import { Send, Upload, ArrowLeft, FileText, Loader2, Brain, Calendar, Graduation
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
+import { ModelSelector } from "@/components/ModelSelector";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -41,6 +42,7 @@ const StudyMode = () => {
   const [selectedGrade, setSelectedGrade] = useState<string>("10");
   const [selectedSubject, setSelectedSubject] = useState<string>("");
   const [selectedChapter, setSelectedChapter] = useState<string>("");
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [exams, setExams] = useState<Exam[]>([]);
   const [examDialogOpen, setExamDialogOpen] = useState(false);
   const [newExamSubject, setNewExamSubject] = useState("");
@@ -381,6 +383,13 @@ const StudyMode = () => {
                 </SelectContent>
               </Select>
             )}
+
+            <div className="w-full sm:w-auto">
+              <ModelSelector
+                selectedModelId={selectedModelId}
+                onSelectModel={setSelectedModelId}
+              />
+            </div>
           </div>
         </div>
       </header>
