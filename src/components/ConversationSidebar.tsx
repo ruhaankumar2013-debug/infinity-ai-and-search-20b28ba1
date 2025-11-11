@@ -1,4 +1,5 @@
 import { MessageSquare, Plus, Trash2, Brain, GraduationCap } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -48,6 +49,14 @@ export function ConversationSidebar({
   onStudyModeChange,
 }: ConversationSidebarProps) {
   const { open } = useSidebar();
+  const navigate = useNavigate();
+
+  const handleStudyModeChange = (enabled: boolean) => {
+    onStudyModeChange(enabled);
+    if (enabled) {
+      navigate("/study");
+    }
+  };
 
   return (
     <Sidebar className={cn("border-r border-border", open ? "w-64" : "w-16")}>
@@ -140,7 +149,7 @@ export function ConversationSidebar({
             <Switch
               id="study-mode"
               checked={studyMode}
-              onCheckedChange={onStudyModeChange}
+              onCheckedChange={handleStudyModeChange}
             />
           </div>
           {open && studyMode && (
