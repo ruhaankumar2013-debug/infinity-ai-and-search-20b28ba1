@@ -96,21 +96,46 @@ First, thoroughly search the knowledge base below for relevant information. If f
 
     console.log(`[openchat] Calling Cloudflare Workers AI ${modelName}...`);
 
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: modelName,
-          messages: chatMessages,
-          stream: false,
-        }),
-      }
-    );
+    // GPT-OSS-120B uses Responses API format
+    let response;
+    if (modelName === '@cf/openai/gpt-oss-120b') {
+      // Convert messages to Responses API format
+      const systemMessage = chatMessages.find(m => m.role === 'system');
+      const userMessages = chatMessages.filter(m => m.role === 'user' || m.role === 'assistant');
+      
+      response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/responses`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelName,
+            instructions: systemMessage?.content || 'You are a helpful assistant.',
+            input: userMessages.map(m => m.content).join('\n'),
+          }),
+        }
+      );
+    } else {
+      // Standard chat completions format for other models
+      response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: chatMessages,
+            stream: false,
+          }),
+        }
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -122,7 +147,8 @@ First, thoroughly search the knowledge base below for relevant information. If f
     }
 
     const result = await response.json();
-    const aiResponse = result.result?.response || result.choices?.[0]?.message?.content || 'No response';
+    // Handle both Responses API and Chat Completions API formats
+    const aiResponse = result.result?.response || result.choices?.[0]?.message?.content || result.response || 'No response';
 
     console.log('[openchat] Sending response back to client...');
 
