@@ -35,7 +35,6 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
       .select("*")
       .eq("is_active", true)
       .eq("type", "text-generation")
-      .or("model_id.like.@cf/%,model_id.like.@hf/%")
       .order("parameters", { ascending: true });
 
     if (error) {

@@ -1,3 +1,4 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -5,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -94,16 +97,55 @@ First, thoroughly search the knowledge base below for relevant information. If f
       ...messages,
     ];
 
-    // Map unknown or alias models to a supported default to avoid CF 400 errors
-    const FALLBACK_MODEL = '@cf/meta/llama-3-8b-instruct';
-    const MODEL_ALIASES: Record<string, string> = {
-      '@cf/gpt-oss-120b': '@cf/meta/llama-3-8b-instruct',
-      'gpt-oss-120b': '@cf/meta/llama-3-8b-instruct',
-      'GPT-OSS-120B': '@cf/meta/llama-3-8b-instruct',
-    };
-    const targetModel = MODEL_ALIASES[modelName] ?? modelName ?? FALLBACK_MODEL;
+    // Check if this is an OpenAI model (GPT-OSS-120B)
+    if (modelName === 'gpt-oss-120b' || modelName === 'GPT-OSS-120B' || modelId === 'gpt-4o') {
+      console.log(`[openchat] Using OpenAI API for ${modelName}...`);
+      
+      if (!OPENAI_API_KEY) {
+        console.error('[openchat] OpenAI API key not found');
+        return new Response(
+          JSON.stringify({ error: 'OpenAI API key not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    console.log(`[openchat] Calling Cloudflare Workers AI ${targetModel}${targetModel !== modelName ? ` (mapped from ${modelName})` : ''}...`);
+      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: chatMessages,
+        }),
+      });
+
+      if (!openaiResponse.ok) {
+        const errorText = await openaiResponse.text();
+        console.error(`[openchat] OpenAI error:`, openaiResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `OpenAI API error: ${openaiResponse.status}`, details: errorText }),
+          { status: openaiResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const openaiResult = await openaiResponse.json();
+      console.log('[openchat] OpenAI response received');
+      console.log('[openchat] Sending response back to client...');
+
+      return new Response(
+        JSON.stringify({ 
+          response: openaiResult.choices[0].message.content 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Cloudflare Workers AI handling
+    const FALLBACK_MODEL = '@cf/meta/llama-3-8b-instruct';
+    const targetModel = modelName ?? FALLBACK_MODEL;
+    console.log(`[openchat] Calling Cloudflare Workers AI ${targetModel}...`);
 
     const cfBaseUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run`;
 
