@@ -95,7 +95,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
     ];
 
     // Map unknown or alias models to a supported default to avoid CF 400 errors
-    const FALLBACK_MODEL = '@cf/mistral/mistral-7b-instruct';
+    const FALLBACK_MODEL = '@cf/meta/llama-3-8b-instruct';
     const MODEL_ALIASES: Record<string, string> = {
       '@cf/gpt-oss-120b': FALLBACK_MODEL,
       'gpt-oss-120b': FALLBACK_MODEL,
@@ -105,17 +105,17 @@ First, thoroughly search the knowledge base below for relevant information. If f
 
     console.log(`[openchat] Calling Cloudflare Workers AI ${targetModel}${targetModel !== modelName ? ` (mapped from ${modelName})` : ''}...`);
 
-    const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`;
+    const cfBaseUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run`;
 
     const makeCfRequest = async (model: string) => {
-      return await fetch(cfUrl, {
+      const url = `${cfBaseUrl}/${model}`;
+      return await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model,
           messages: chatMessages,
           stream: false,
         }),
