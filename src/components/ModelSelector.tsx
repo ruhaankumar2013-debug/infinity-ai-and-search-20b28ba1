@@ -35,6 +35,7 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
       .select("*")
       .eq("is_active", true)
       .eq("type", "text-generation")
+      .or("model_id.like.@cf/%,model_id.like.@hf/%")
       .order("parameters", { ascending: true });
 
     if (error) {
@@ -93,7 +94,7 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
 
         <div className="text-xs text-muted-foreground flex items-center gap-1">
           <Cpu className="w-3 h-3" />
-          <span>AI Models • Cloudflare & OpenAI</span>
+          <span>Cloudflare Workers AI • Fast & Scalable</span>
         </div>
       </div>
     </Card>
