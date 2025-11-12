@@ -99,9 +99,18 @@ First, thoroughly search the knowledge base below for relevant information. If f
     // GPT-OSS-120B uses Responses API format
     let response;
     if (modelName === '@cf/openai/gpt-oss-120b') {
-      // Convert messages to Responses API format
-      const systemMessage = chatMessages.find(m => m.role === 'system');
-      const userMessages = chatMessages.filter(m => m.role === 'user' || m.role === 'assistant');
+      // Build conversation context for Responses API
+      const conversationText = chatMessages
+        .map(m => {
+          if (m.role === 'system') return `Instructions: ${m.content}`;
+          if (m.role === 'user') return `User: ${m.content}`;
+          if (m.role === 'assistant') return `Assistant: ${m.content}`;
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+      
+      console.log('[openchat] Using Responses API for GPT-OSS-120B');
       
       response = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/responses`,
@@ -113,8 +122,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
           },
           body: JSON.stringify({
             model: modelName,
-            instructions: systemMessage?.content || 'You are a helpful assistant.',
-            input: userMessages.map(m => m.content).join('\n'),
+            input: conversationText,
           }),
         }
       );
@@ -147,8 +155,14 @@ First, thoroughly search the knowledge base below for relevant information. If f
     }
 
     const result = await response.json();
+    console.log('[openchat] API response structure:', JSON.stringify(result).substring(0, 200));
+    
     // Handle both Responses API and Chat Completions API formats
     const aiResponse = result.result?.response || result.choices?.[0]?.message?.content || result.response || 'No response';
+    
+    if (aiResponse === 'No response') {
+      console.error('[openchat] Could not extract response from result:', JSON.stringify(result));
+    }
 
     console.log('[openchat] Sending response back to client...');
 
