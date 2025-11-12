@@ -132,11 +132,17 @@ First, thoroughly search the knowledge base below for relevant information. If f
       if (response.status === 400 && targetModel !== FALLBACK_MODEL) {
         console.log(`[openchat] Retrying with fallback model: ${FALLBACK_MODEL}`);
         response = await makeCfRequest(FALLBACK_MODEL);
-      }
 
-      if (!response.ok) {
-        const secondError = await response.text();
-        console.error(`[openchat] Fallback also failed:`, response.status, secondError);
+        if (!response.ok) {
+          const retryError = await response.text();
+          console.error(`[openchat] Fallback also failed:`, response.status, retryError);
+          return new Response(
+            JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: `Original: ${errorText}. Fallback: ${retryError}` }),
+            { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } else {
+        // No retry, return original error
         return new Response(
           JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: errorText }),
           { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
