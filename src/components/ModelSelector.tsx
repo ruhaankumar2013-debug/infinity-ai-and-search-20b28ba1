@@ -93,7 +93,7 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
 
         <div className="text-xs text-muted-foreground flex items-center gap-1">
           <Cpu className="w-3 h-3" />
-          <span>Cloudflare Workers AI • Fast & Scalable</span>
+          <span>AI Models • Cloudflare & OpenAI</span>
         </div>
       </div>
     </Card>
