@@ -94,31 +94,54 @@ First, thoroughly search the knowledge base below for relevant information. If f
       ...messages,
     ];
 
-    console.log(`[openchat] Calling Cloudflare Workers AI ${modelName}...`);
+    // Map unknown or alias models to a supported default to avoid CF 400 errors
+    const FALLBACK_MODEL = '@cf/mistral/mistral-7b-instruct';
+    const MODEL_ALIASES: Record<string, string> = {
+      '@cf/gpt-oss-120b': FALLBACK_MODEL,
+      'gpt-oss-120b': FALLBACK_MODEL,
+      'GPT-OSS-120B': FALLBACK_MODEL,
+    };
+    const targetModel = MODEL_ALIASES[modelName] ?? modelName ?? FALLBACK_MODEL;
 
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
-      {
+    console.log(`[openchat] Calling Cloudflare Workers AI ${targetModel}${targetModel !== modelName ? ` (mapped from ${modelName})` : ''}...`);
+
+    const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`;
+
+    const makeCfRequest = async (model: string) => {
+      return await fetch(cfUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: modelName,
+          model,
           messages: chatMessages,
           stream: false,
         }),
-      }
-    );
+      });
+    };
+
+    let response = await makeCfRequest(targetModel);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[openchat] ${modelName} error:`, response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      console.error(`[openchat] ${targetModel} error:`, response.status, errorText);
+
+      // If model is invalid (400), retry once with fallback
+      if (response.status === 400 && targetModel !== FALLBACK_MODEL) {
+        console.log(`[openchat] Retrying with fallback model: ${FALLBACK_MODEL}`);
+        response = await makeCfRequest(FALLBACK_MODEL);
+      }
+
+      if (!response.ok) {
+        const secondError = await response.text();
+        console.error(`[openchat] Fallback also failed:`, response.status, secondError);
+        return new Response(
+          JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: errorText }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     const result = await response.json();
