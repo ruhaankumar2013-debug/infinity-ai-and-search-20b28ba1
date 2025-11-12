@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, Trash2, Brain, GraduationCap } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Brain, GraduationCap, Globe } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
@@ -35,6 +35,8 @@ interface ConversationSidebarProps {
   onResearchModeChange: (enabled: boolean) => void;
   studyMode: boolean;
   onStudyModeChange: (enabled: boolean) => void;
+  webSurfingMode: boolean;
+  onWebSurfingModeChange: (enabled: boolean) => void;
 }
 
 export function ConversationSidebar({
@@ -47,6 +49,8 @@ export function ConversationSidebar({
   onResearchModeChange,
   studyMode,
   onStudyModeChange,
+  webSurfingMode,
+  onWebSurfingModeChange,
 }: ConversationSidebarProps) {
   const { open } = useSidebar();
   const navigate = useNavigate();
@@ -155,6 +159,27 @@ export function ConversationSidebar({
           {open && studyMode && (
             <p className="text-xs text-muted-foreground">
               Get study assistance and personalized plans
+            </p>
+          )}
+          
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-primary" />
+              {open && (
+                <Label htmlFor="web-surfing-mode" className="text-sm font-medium cursor-pointer">
+                  Web Surfing
+                </Label>
+              )}
+            </div>
+            <Switch
+              id="web-surfing-mode"
+              checked={webSurfingMode}
+              onCheckedChange={onWebSurfingModeChange}
+            />
+          </div>
+          {open && webSurfingMode && (
+            <p className="text-xs text-muted-foreground">
+              Search the web for real-time information
             </p>
           )}
         </div>

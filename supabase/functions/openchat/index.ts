@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, modelId, modelName, researchMode, studyMode } = await req.json();
+    const { messages, modelId, modelName, researchMode, studyMode, webSurfingMode } = await req.json();
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
 
@@ -51,10 +51,25 @@ serve(async (req) => {
         .join('\n\n');
     }
 
-    // System prompt with knowledge - enhanced for research mode and study mode
+    // System prompt with knowledge - enhanced for research mode, study mode, and web surfing mode
     let basePrompt = '';
     
-    if (studyMode) {
+    if (webSurfingMode) {
+      basePrompt = `You are an AI assistant with Web Surfing Mode enabled. When answering questions:
+
+1. ACKNOWLEDGE LIMITATIONS: Be transparent when information requires real-time data or recent events
+2. SUGGEST SEARCHES: Guide users on what specific searches would help answer their question
+3. PROVIDE CONTEXT: Explain what type of information would be found through web search
+4. INDICATE FRESHNESS: Note when your information might be outdated (knowledge cutoff date)
+5. OFFER ALTERNATIVES: When you can't search the web, suggest reliable sources or search strategies
+
+IMPORTANT: You don't have actual web browsing capability, but you should:
+- Indicate when a web search would provide more current information
+- Suggest specific search queries or reliable websites
+- Explain what the user should look for when searching
+
+First, check the knowledge base below for relevant information.${knowledgeContext}`;
+    } else if (studyMode) {
       basePrompt = `You are an expert AI study assistant and educational tutor. Your role is to help students learn effectively and create personalized study plans.
 
 CORE CAPABILITIES:

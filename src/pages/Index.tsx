@@ -48,6 +48,7 @@ const Index = () => {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [researchMode, setResearchMode] = useState(false);
   const [studyMode, setStudyMode] = useState(false); // Study mode for learning assistance
+  const [webSurfingMode, setWebSurfingMode] = useState(false); // Web surfing mode for real-time search
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -311,7 +312,8 @@ const Index = () => {
             modelId: selectedModelId,
             modelName: modelData.model_id,
             researchMode,
-            studyMode
+            studyMode,
+            webSurfingMode
           }
         });
 
@@ -424,6 +426,8 @@ const Index = () => {
           onResearchModeChange={setResearchMode}
           studyMode={studyMode}
           onStudyModeChange={setStudyMode}
+          webSurfingMode={webSurfingMode}
+          onWebSurfingModeChange={setWebSurfingMode}
         />
 
         <div className="flex-1 flex flex-col">
