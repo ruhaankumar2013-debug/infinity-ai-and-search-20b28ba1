@@ -157,9 +157,25 @@ First, thoroughly search the knowledge base below for relevant information. If f
     const result = await response.json();
     console.log('[openchat] API response structure:', JSON.stringify(result).substring(0, 200));
     
-    // Handle both Responses API and Chat Completions API formats
-    const aiResponse = result.result?.response || result.choices?.[0]?.message?.content || result.response || 'No response';
-    
+    // Extract text from Responses API (gpt-oss-120b) if present
+    let aiResponse = '';
+    if (Array.isArray(result?.output)) {
+      try {
+        const msg = [...result.output].reverse().find((o: any) => o?.type === 'message');
+        const txt = msg?.content?.find((c: any) => c?.type === 'output_text')?.text;
+        if (typeof txt === 'string' && txt.length > 0) {
+          aiResponse = txt;
+        }
+      } catch (e) {
+        console.error('[openchat] Failed to parse Responses API output:', e);
+      }
+    }
+
+    // Fallbacks for Chat Completions and other formats
+    if (!aiResponse) {
+      aiResponse = result.result?.response || result.response || result.choices?.[0]?.message?.content || result.text || 'No response';
+    }
+
     if (aiResponse === 'No response') {
       console.error('[openchat] Could not extract response from result:', JSON.stringify(result));
     }
