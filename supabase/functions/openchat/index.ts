@@ -97,9 +97,9 @@ First, thoroughly search the knowledge base below for relevant information. If f
     // Map unknown or alias models to a supported default to avoid CF 400 errors
     const FALLBACK_MODEL = '@cf/meta/llama-3-8b-instruct';
     const MODEL_ALIASES: Record<string, string> = {
-      '@cf/gpt-oss-120b': FALLBACK_MODEL,
-      'gpt-oss-120b': FALLBACK_MODEL,
-      'GPT-OSS-120B': FALLBACK_MODEL,
+      '@cf/gpt-oss-120b': '@cf/meta/llama-3-8b-instruct',
+      'gpt-oss-120b': '@cf/meta/llama-3-8b-instruct',
+      'GPT-OSS-120B': '@cf/meta/llama-3-8b-instruct',
     };
     const targetModel = MODEL_ALIASES[modelName] ?? modelName ?? FALLBACK_MODEL;
 
@@ -127,27 +127,10 @@ First, thoroughly search the knowledge base below for relevant information. If f
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[openchat] ${targetModel} error:`, response.status, errorText);
-
-      // If model is invalid (400), retry once with fallback
-      if (response.status === 400 && targetModel !== FALLBACK_MODEL) {
-        console.log(`[openchat] Retrying with fallback model: ${FALLBACK_MODEL}`);
-        response = await makeCfRequest(FALLBACK_MODEL);
-
-        if (!response.ok) {
-          const retryError = await response.text();
-          console.error(`[openchat] Fallback also failed:`, response.status, retryError);
-          return new Response(
-            JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: `Original: ${errorText}. Fallback: ${retryError}` }),
-            { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        // No retry, return original error
-        return new Response(
-          JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: errorText }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      return new Response(
+        JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}`, details: errorText }),
+        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const result = await response.json();
