@@ -282,8 +282,8 @@ const Index = () => {
         throw new Error(`Failed to generate image. Please try again.`);
       }
     }
-    // Check if this is a Cloudflare Workers AI model (starts with @cf/)
-    else if (modelData.model_id.startsWith('@cf/')) {
+    // Check if this is a Cloudflare Workers AI model (starts with @cf/) or Groq model (starts with @groq/)
+    else if (modelData.model_id.startsWith('@cf/') || modelData.model_id.startsWith('@groq/')) {
       try {
         const {
           data,
@@ -311,7 +311,7 @@ const Index = () => {
           content: assistantContent
         }]);
       } catch (error) {
-        console.error("Cloudflare Workers AI error:", error);
+        console.error("AI error:", error);
         throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
       }
     } else {
