@@ -1,1 +1,13 @@
 project_id = "nvdbugohmhgbndqgliax"
+
+[functions.openchat]
+verify_jwt = true
+
+[functions.ai-chat]
+verify_jwt = true
+
+[functions.generate-image]
+verify_jwt = true
+
+[functions.web-search]
+verify_jwt = true
