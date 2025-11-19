@@ -6,13 +6,79 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Input validation
+const validateInput = (data: any) => {
+  const errors: string[] = [];
+
+  // Validate messages array
+  if (!Array.isArray(data.messages)) {
+    errors.push("messages must be an array");
+  } else if (data.messages.length === 0) {
+    errors.push("messages array cannot be empty");
+  } else if (data.messages.length > 100) {
+    errors.push("messages array cannot exceed 100 messages");
+  } else {
+    for (const msg of data.messages) {
+      if (!msg.role || !msg.content) {
+        errors.push("each message must have role and content");
+        break;
+      }
+      if (typeof msg.content !== 'string' || msg.content.length > 10000) {
+        errors.push("message content must be string with max 10,000 characters");
+        break;
+      }
+    }
+  }
+
+  // Validate modelName
+  if (data.modelName && typeof data.modelName !== 'string') {
+    errors.push("modelName must be a string");
+  } else if (data.modelName && data.modelName.length > 100) {
+    errors.push("modelName cannot exceed 100 characters");
+  } else if (data.modelName && !data.modelName.match(/^@(groq|cf)\//)) {
+    errors.push("modelName must start with @groq/ or @cf/");
+  }
+
+  // Validate modelId (must be valid UUID or null)
+  if (data.modelId && typeof data.modelId !== 'string') {
+    errors.push("modelId must be a string");
+  } else if (data.modelId && !data.modelId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    errors.push("modelId must be a valid UUID");
+  }
+
+  // Validate boolean flags
+  if (data.researchMode !== undefined && typeof data.researchMode !== 'boolean') {
+    errors.push("researchMode must be a boolean");
+  }
+  if (data.studyMode !== undefined && typeof data.studyMode !== 'boolean') {
+    errors.push("studyMode must be a boolean");
+  }
+  if (data.webSurfingMode !== undefined && typeof data.webSurfingMode !== 'boolean') {
+    errors.push("webSurfingMode must be a boolean");
+  }
+
+  return errors;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { messages, modelId, modelName, researchMode, studyMode, webSurfingMode } = await req.json();
+    const requestData = await req.json();
+    
+    // Validate input
+    const validationErrors = validateInput(requestData);
+    if (validationErrors.length > 0) {
+      console.error('[openchat] Validation errors:', validationErrors);
+      return new Response(
+        JSON.stringify({ error: 'Invalid input', details: validationErrors }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { messages, modelId, modelName, researchMode, studyMode, webSurfingMode } = requestData;
     
     // Determine which API to use based on model prefix
     const isGroqModel = modelName?.startsWith('@groq/');
