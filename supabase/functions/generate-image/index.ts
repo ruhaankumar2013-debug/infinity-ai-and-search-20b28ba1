@@ -5,20 +5,42 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Input validation
+const validateInput = (data: any) => {
+  const errors: string[] = [];
+
+  if (!data.prompt) {
+    errors.push("prompt is required");
+  } else if (typeof data.prompt !== 'string') {
+    errors.push("prompt must be a string");
+  } else if (data.prompt.length === 0) {
+    errors.push("prompt cannot be empty");
+  } else if (data.prompt.length > 5000) {
+    errors.push("prompt cannot exceed 5,000 characters");
+  }
+
+  return errors;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { prompt } = await req.json();
+    const requestData = await req.json();
     
-    if (!prompt) {
+    // Validate input
+    const validationErrors = validateInput(requestData);
+    if (validationErrors.length > 0) {
+      console.error('Validation errors:', validationErrors);
       return new Response(
-        JSON.stringify({ error: "Prompt is required" }),
+        JSON.stringify({ error: "Invalid input", details: validationErrors }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const { prompt } = requestData;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
