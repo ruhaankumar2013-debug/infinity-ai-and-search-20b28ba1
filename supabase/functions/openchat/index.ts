@@ -13,11 +13,24 @@ serve(async (req) => {
 
   try {
     const { messages, modelId, modelName, researchMode, studyMode, webSurfingMode } = await req.json();
-    const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
-    const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
-
-    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-      throw new Error('Cloudflare credentials not configured');
+    
+    // Determine which API to use based on model prefix
+    const isGroqModel = modelName?.startsWith('@groq/');
+    const isCloudflareModel = modelName?.startsWith('@cf/');
+    
+    if (isGroqModel) {
+      const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+      if (!GROQ_API_KEY) {
+        throw new Error('Groq API key not configured');
+      }
+    } else if (isCloudflareModel) {
+      const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
+      const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
+      if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
+        throw new Error('Cloudflare credentials not configured');
+      }
+    } else {
+      throw new Error('Unsupported model type');
     }
 
     console.log(`[openchat] Starting request to ${modelName}...`);
@@ -109,62 +122,90 @@ First, thoroughly search the knowledge base below for relevant information. If f
       ...messages,
     ];
 
-    console.log(`[openchat] Calling Cloudflare Workers AI ${modelName}...`);
-
-    // GPT-OSS-120B uses Responses API format
     let response;
-    if (modelName === '@cf/openai/gpt-oss-120b') {
-      // Build conversation context for Responses API
-      const conversationText = chatMessages
-        .map(m => {
-          if (m.role === 'system') return `Instructions: ${m.content}`;
-          if (m.role === 'user') return `User: ${m.content}`;
-          if (m.role === 'assistant') return `Assistant: ${m.content}`;
-          return '';
-        })
-        .filter(Boolean)
-        .join('\n\n');
+    
+    if (isGroqModel) {
+      // Groq API call
+      console.log(`[openchat] Calling Groq API with ${modelName}...`);
+      const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
       
-      console.log('[openchat] Using Responses API for GPT-OSS-120B');
+      // Extract actual model name (remove @groq/ prefix)
+      const groqModelName = modelName.replace('@groq/', '');
       
-      response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/responses`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: modelName,
-            input: conversationText,
-          }),
-        }
-      );
+      response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: groqModelName,
+          messages: chatMessages,
+          temperature: 0.7,
+          max_tokens: 8192,
+        }),
+      });
     } else {
-      // Standard chat completions format for other models
-      response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: modelName,
-            messages: chatMessages,
-            stream: false,
-          }),
-        }
-      );
+      // Cloudflare Workers AI
+      console.log(`[openchat] Calling Cloudflare Workers AI ${modelName}...`);
+      const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
+      const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
+      
+      // GPT-OSS-120B uses Responses API format
+      if (modelName === '@cf/openai/gpt-oss-120b') {
+        // Build conversation context for Responses API
+        const conversationText = chatMessages
+          .map(m => {
+            if (m.role === 'system') return `Instructions: ${m.content}`;
+            if (m.role === 'user') return `User: ${m.content}`;
+            if (m.role === 'assistant') return `Assistant: ${m.content}`;
+            return '';
+          })
+          .filter(Boolean)
+          .join('\n\n');
+        
+        console.log('[openchat] Using Responses API for GPT-OSS-120B');
+        
+        response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/responses`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: modelName,
+              input: conversationText,
+            }),
+          }
+        );
+      } else {
+        // Standard chat completions format for other models
+        response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: modelName,
+              messages: chatMessages,
+              stream: false,
+            }),
+          }
+        );
+      }
     }
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[openchat] ${modelName} error:`, response.status, errorText);
+      const apiName = isGroqModel ? 'Groq API' : 'Cloudflare Workers AI';
       return new Response(
-        JSON.stringify({ error: `Cloudflare Workers AI error: ${response.status}` }),
+        JSON.stringify({ error: `${apiName} error: ${response.status}` }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
