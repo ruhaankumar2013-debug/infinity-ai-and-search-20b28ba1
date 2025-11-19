@@ -134,20 +134,37 @@ serve(async (req) => {
     let basePrompt = '';
     
     if (webSurfingMode) {
-      basePrompt = `You are an AI assistant with Web Surfing Mode enabled. When answering questions:
+      basePrompt = `You are an AI assistant with Web Surfing Mode enabled. You have REAL web browsing capability through the web_search function.
 
-1. ACKNOWLEDGE LIMITATIONS: Be transparent when information requires real-time data or recent events
-2. SUGGEST SEARCHES: Guide users on what specific searches would help answer their question
-3. PROVIDE CONTEXT: Explain what type of information would be found through web search
-4. INDICATE FRESHNESS: Note when your information might be outdated (knowledge cutoff date)
-5. OFFER ALTERNATIVES: When you can't search the web, suggest reliable sources or search strategies
+CAPABILITIES:
+- You can search the web in real-time using web_search(query, type='search')
+- You can read specific URLs using web_search(url, type='read')
+- Search results are returned in clean markdown format
+- You can access current information, news, and real-time data
 
-IMPORTANT: You don't have actual web browsing capability, but you should:
-- Indicate when a web search would provide more current information
-- Suggest specific search queries or reliable websites
-- Explain what the user should look for when searching
+WHEN TO USE WEB SEARCH:
+1. Current events, news, or recent information
+2. Real-time data (weather, stock prices, sports scores)
+3. Specific facts that may have changed since your training
+4. Information about recent products, services, or technologies
+5. When users explicitly ask you to "search the web" or "look up"
 
-First, check the knowledge base below for relevant information.${knowledgeContext}`;
+HOW TO USE:
+- For general searches: Use web_search with type='search' and a clear search query
+- For specific URLs: Use web_search with type='read' and the full URL
+- Always inform users when you're searching the web
+- Cite the sources of your information when using web search results
+
+IMPORTANT:
+- First check the knowledge base below for relevant information
+- Only search the web when knowledge base doesn't have the answer or when current information is needed
+- Be transparent about when you're using web search vs your training data
+- Summarize search results clearly and cite sources
+
+First, check the knowledge base below for relevant information.${knowledgeContext}
+
+AVAILABLE TOOL:
+- web_search(query: string, type: 'search' | 'read'): Searches the web or reads a URL, returns markdown content`;
     } else if (studyMode) {
       basePrompt = `You are an expert AI study assistant and educational tutor. Your role is to help students learn effectively and create personalized study plans.
 
@@ -183,9 +200,49 @@ First, thoroughly search the knowledge base below for relevant information. If f
       basePrompt = `You are an intelligent AI assistant. You must always provide a helpful answer. First, search thoroughly through the knowledge base below for relevant information. If the answer is in the knowledge base, use it. If not found in the knowledge base, use your general knowledge to provide the best possible answer. Never say you don't know - always provide useful information.${knowledgeContext}`;
     }
 
+    // Enhanced message handling for web surfing mode
+    let enrichedMessages = [...messages];
+    
+    // Check if the last user message contains a web search request in web surfing mode
+    if (webSurfingMode && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'user') {
+        // Check for search keywords or patterns
+        const searchKeywords = ['search for', 'look up', 'find information about', 'what is the latest', 'current', 'recent'];
+        const needsWebSearch = searchKeywords.some(keyword => 
+          lastMessage.content.toLowerCase().includes(keyword)
+        );
+
+        if (needsWebSearch) {
+          console.log('[openchat] Detected web search request, calling web-search function...');
+          try {
+            const { data: searchData, error: searchError } = await supabase.functions.invoke('web-search', {
+              body: {
+                query: lastMessage.content,
+                type: 'search'
+              }
+            });
+
+            if (searchError) {
+              console.error('[openchat] Web search error:', searchError);
+            } else if (searchData?.content) {
+              console.log('[openchat] Web search successful, adding context to messages');
+              // Add search results as a system message
+              enrichedMessages.push({
+                role: 'system',
+                content: `[WEB SEARCH RESULTS]\n${searchData.content.substring(0, 4000)}\n[END OF WEB SEARCH RESULTS]\n\nUse the above web search results to answer the user's question. Cite sources when appropriate.`
+              });
+            }
+          } catch (e) {
+            console.error('[openchat] Error calling web-search:', e);
+          }
+        }
+      }
+    }
+
     const chatMessages = [
       { role: 'system', content: basePrompt },
-      ...messages,
+      ...enrichedMessages,
     ];
 
     let response;
