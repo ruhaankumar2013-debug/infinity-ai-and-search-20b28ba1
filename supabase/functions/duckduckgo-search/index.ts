@@ -29,12 +29,12 @@ serve(async (req) => {
 
     console.log('Searching DuckDuckGo for:', query);
 
-    // Use DuckDuckGo's HTML interface (Lite version)
-    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+    // Use DuckDuckGo's HTML interface
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
     });
 
@@ -43,31 +43,41 @@ serve(async (req) => {
     }
 
     const html = await response.text();
+    console.log('Received HTML, length:', html.length);
     
-    // Parse HTML results - DuckDuckGo Lite uses a table structure
+    // Parse HTML results
     const results: SearchResult[] = [];
     
-    // Split by result rows (each result is in a table row)
-    const rows = html.split('<tr>');
+    // DuckDuckGo HTML structure uses divs with class "result"
+    const resultRegex = /<div class="result[^"]*">(.*?)<\/div>[\s\S]*?(?=<div class="result|$)/gi;
+    const matches = html.matchAll(resultRegex);
     
-    for (let i = 0; i < rows.length && results.length < 10; i++) {
-      const row = rows[i];
+    for (const match of matches) {
+      if (results.length >= 10) break;
       
-      // Extract link and title - look for the main result link
-      const linkMatch = row.match(/<a[^>]*href="([^"]+)"[^>]*class="result-link"[^>]*>(.*?)<\/a>/s);
+      const resultHtml = match[0];
+      
+      // Extract title and URL
+      const linkMatch = resultHtml.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
       if (!linkMatch) continue;
       
       let url = linkMatch[1];
-      let title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+      // DuckDuckGo uses redirect URLs, extract the actual URL
+      const urlMatch = url.match(/uddg=([^&]+)/);
+      if (urlMatch) {
+        url = decodeURIComponent(urlMatch[1]);
+      }
       
-      // Extract snippet - look for the result snippet
-      const snippetMatch = row.match(/<td[^>]*class="result-snippet"[^>]*>(.*?)<\/td>/s);
+      const title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+      
+      // Extract snippet
+      const snippetMatch = resultHtml.match(/<a[^>]*class="result__snippet"[^>]*>(.*?)<\/a>/s);
       let snippet = '';
       if (snippetMatch) {
         snippet = snippetMatch[1].replace(/<[^>]*>/g, '').trim();
       }
       
-      // Skip if no valid URL or title
+      // Skip invalid results
       if (!url || !title || url.includes('duckduckgo.com')) continue;
       
       results.push({
@@ -75,6 +85,45 @@ serve(async (req) => {
         url: url,
         snippet: snippet,
       });
+    }
+
+    // Fallback: try alternate parsing if no results found
+    if (results.length === 0) {
+      console.log('Trying alternate parsing method');
+      const linkRegex = /<a[^>]*class="result__url"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gs;
+      const titleRegex = /<h2[^>]*class="result__title"[^>]*>.*?<a[^>]*>(.*?)<\/a>/gs;
+      
+      const links: string[] = [];
+      const titles: string[] = [];
+      
+      let linkMatch;
+      while ((linkMatch = linkRegex.exec(html)) !== null && links.length < 10) {
+        let url = linkMatch[1];
+        const urlMatch = url.match(/uddg=([^&]+)/);
+        if (urlMatch) {
+          url = decodeURIComponent(urlMatch[1]);
+        }
+        if (url && !url.includes('duckduckgo.com')) {
+          links.push(url);
+        }
+      }
+      
+      let titleMatch;
+      while ((titleMatch = titleRegex.exec(html)) !== null && titles.length < 10) {
+        const title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+        if (title) {
+          titles.push(title);
+        }
+      }
+      
+      const minLength = Math.min(links.length, titles.length, 10);
+      for (let i = 0; i < minLength; i++) {
+        results.push({
+          title: titles[i],
+          url: links[i],
+          snippet: '',
+        });
+      }
     }
 
     console.log(`Found ${results.length} results`);
