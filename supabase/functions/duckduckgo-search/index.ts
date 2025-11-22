@@ -44,35 +44,37 @@ serve(async (req) => {
 
     const html = await response.text();
     
-    // Parse HTML results
+    // Parse HTML results - DuckDuckGo Lite uses a table structure
     const results: SearchResult[] = [];
     
-    // Simple regex-based parsing of DuckDuckGo Lite HTML
-    // Format: <a rel="nofollow" class="result-link" href="URL">Title</a>
-    const linkRegex = /<a[^>]*class="result-link"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
-    const snippetRegex = /<td[^>]*class="result-snippet"[^>]*>([^<]*)/g;
+    // Split by result rows (each result is in a table row)
+    const rows = html.split('<tr>');
     
-    let linkMatch;
-    let snippetMatch;
-    const snippets: string[] = [];
-    
-    // Extract snippets first
-    while ((snippetMatch = snippetRegex.exec(html)) !== null) {
-      snippets.push(snippetMatch[1].trim());
-    }
-    
-    let index = 0;
-    while ((linkMatch = linkRegex.exec(html)) !== null && index < 10) {
-      const url = linkMatch[1];
-      const title = linkMatch[2];
-      const snippet = snippets[index] || '';
+    for (let i = 0; i < rows.length && results.length < 10; i++) {
+      const row = rows[i];
+      
+      // Extract link and title - look for the main result link
+      const linkMatch = row.match(/<a[^>]*href="([^"]+)"[^>]*class="result-link"[^>]*>(.*?)<\/a>/s);
+      if (!linkMatch) continue;
+      
+      let url = linkMatch[1];
+      let title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+      
+      // Extract snippet - look for the result snippet
+      const snippetMatch = row.match(/<td[^>]*class="result-snippet"[^>]*>(.*?)<\/td>/s);
+      let snippet = '';
+      if (snippetMatch) {
+        snippet = snippetMatch[1].replace(/<[^>]*>/g, '').trim();
+      }
+      
+      // Skip if no valid URL or title
+      if (!url || !title || url.includes('duckduckgo.com')) continue;
       
       results.push({
-        title: title.trim(),
+        title: title,
         url: url,
         snippet: snippet,
       });
-      index++;
     }
 
     console.log(`Found ${results.length} results`);
