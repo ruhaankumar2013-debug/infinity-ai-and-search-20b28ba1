@@ -290,6 +290,13 @@ const Index = () => {
         
         // If web surfing mode is enabled, search first, fetch page content, then pass to AI
         if (webSurfingMode) {
+          console.log('🌐 WEB SURFING MODE ENABLED - Starting search...');
+          toast({
+            title: "Web Surfing Mode Active",
+            description: "Searching the web for latest information...",
+            duration: 2000,
+          });
+          
           try {
             console.log('Web surfing mode: searching DuckDuckGo...');
             const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
@@ -297,9 +304,20 @@ const Index = () => {
             });
             
             if (searchError) {
-              console.error('Search error:', searchError);
+              console.error('❌ Search error:', searchError);
+              toast({
+                title: "Search Failed",
+                description: "Could not search the web. Using base knowledge.",
+                variant: "destructive",
+                duration: 3000,
+              });
             } else if (searchData?.results && searchData.results.length > 0) {
-              console.log(`Found ${searchData.results.length} search results, fetching page content...`);
+              console.log(`✅ Found ${searchData.results.length} search results, fetching page content...`);
+              toast({
+                title: "Found Results",
+                description: `Reading ${Math.min(5, searchData.results.length)} web pages...`,
+                duration: 2000,
+              });
               
               // Take top 5 results and fetch their full content
               const topResults = searchData.results.slice(0, 5);
@@ -308,7 +326,7 @@ const Index = () => {
               // Fetch content from each URL
               for (const result of topResults) {
                 try {
-                  console.log(`Fetching content from: ${result.url}`);
+                  console.log(`📄 Fetching content from: ${result.url}`);
                   const { data: pageData, error: pageError } = await supabase.functions.invoke('web-search', {
                     body: { 
                       query: result.url,
@@ -317,41 +335,70 @@ const Index = () => {
                   });
                   
                   if (!pageError && pageData?.content) {
+                    console.log(`✅ Successfully fetched ${result.url} (${pageData.content.length} chars)`);
                     pageContents.push({
                       title: result.title,
                       url: result.url,
                       content: pageData.content.substring(0, 3000) // Limit to 3000 chars per page
                     });
+                  } else {
+                    console.error(`❌ Failed to fetch ${result.url}:`, pageError);
                   }
                 } catch (err) {
-                  console.error(`Failed to fetch ${result.url}:`, err);
+                  console.error(`❌ Failed to fetch ${result.url}:`, err);
                 }
               }
               
               // Format all page content for AI
               if (pageContents.length > 0) {
-                searchContext = '\n\n=== WEB SEARCH RESULTS ===\n';
-                searchContext += `Query: "${lastUserMessage.content}"\n`;
-                searchContext += `Found ${pageContents.length} pages with full content:\n\n`;
+                console.log(`📚 Compiled ${pageContents.length} pages with full content`);
+                toast({
+                  title: "Pages Loaded",
+                  description: `Analyzing ${pageContents.length} web pages...`,
+                  duration: 2000,
+                });
+                
+                searchContext = '\n\n=== REAL-TIME WEB SEARCH RESULTS (LIVE DATA) ===\n';
+                searchContext += `User Query: "${lastUserMessage.content}"\n`;
+                searchContext += `Retrieved ${pageContents.length} pages with full content:\n\n`;
                 
                 pageContents.forEach((page, index) => {
                   searchContext += `\n[SOURCE ${index + 1}]\n`;
                   searchContext += `Title: ${page.title}\n`;
                   searchContext += `URL: ${page.url}\n`;
-                  searchContext += `Content:\n${page.content}\n`;
+                  searchContext += `Full Content:\n${page.content}\n`;
                   searchContext += `${'='.repeat(80)}\n`;
                 });
                 
-                searchContext += '\n\nINSTRUCTIONS:\n';
-                searchContext += '- Use the above web page contents to answer the user\'s question\n';
+                searchContext += '\n\n⚠️ CRITICAL INSTRUCTIONS FOR AI:\n';
+                searchContext += '- YOU HAVE REAL-TIME WEB DATA ABOVE - USE IT!\n';
+                searchContext += '- DO NOT say you cannot access real-time information\n';
+                searchContext += '- DO NOT refer users to external websites\n';
+                searchContext += '- ANSWER using the web page contents provided above\n';
                 searchContext += '- Synthesize information from multiple sources\n';
                 searchContext += '- Cite sources using [SOURCE 1], [SOURCE 2], etc.\n';
                 searchContext += '- Provide URLs when referencing specific information\n';
-                searchContext += '- If information conflicts between sources, acknowledge this\n';
+                searchContext += '- This is CURRENT, LIVE information from the web\n';
+              } else {
+                console.warn('⚠️ No page content could be fetched');
+                toast({
+                  title: "Page Fetch Failed",
+                  description: "Could not read web pages. Using search snippets only.",
+                  variant: "destructive",
+                  duration: 3000,
+                });
               }
+            } else {
+              console.warn('⚠️ No search results found');
             }
           } catch (searchErr) {
-            console.error('Search or content fetch failed:', searchErr);
+            console.error('❌ Search or content fetch failed:', searchErr);
+            toast({
+              title: "Web Surfing Failed",
+              description: "Could not access web. Using base knowledge.",
+              variant: "destructive",
+              duration: 3000,
+            });
           }
         }
         
