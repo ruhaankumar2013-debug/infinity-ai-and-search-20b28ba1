@@ -288,7 +288,7 @@ const Index = () => {
       try {
         let searchContext = '';
         
-        // If web surfing mode is enabled, search first and pass results to AI
+        // If web surfing mode is enabled, search first, fetch page content, then pass to AI
         if (webSurfingMode) {
           try {
             console.log('Web surfing mode: searching DuckDuckGo...');
@@ -299,21 +299,59 @@ const Index = () => {
             if (searchError) {
               console.error('Search error:', searchError);
             } else if (searchData?.results && searchData.results.length > 0) {
-              console.log(`Found ${searchData.results.length} search results`);
-              // Format search results for AI
-              searchContext = '\n\nWEB SEARCH RESULTS for query "' + lastUserMessage.content + '":\n\n';
-              searchData.results.forEach((result: any, index: number) => {
-                searchContext += `[${index + 1}] ${result.title}\n`;
-                searchContext += `URL: ${result.url}\n`;
-                if (result.snippet) {
-                  searchContext += `Snippet: ${result.snippet}\n`;
+              console.log(`Found ${searchData.results.length} search results, fetching page content...`);
+              
+              // Take top 5 results and fetch their full content
+              const topResults = searchData.results.slice(0, 5);
+              const pageContents: Array<{ title: string; url: string; content: string }> = [];
+              
+              // Fetch content from each URL
+              for (const result of topResults) {
+                try {
+                  console.log(`Fetching content from: ${result.url}`);
+                  const { data: pageData, error: pageError } = await supabase.functions.invoke('web-search', {
+                    body: { 
+                      query: result.url,
+                      type: 'read'
+                    }
+                  });
+                  
+                  if (!pageError && pageData?.content) {
+                    pageContents.push({
+                      title: result.title,
+                      url: result.url,
+                      content: pageData.content.substring(0, 3000) // Limit to 3000 chars per page
+                    });
+                  }
+                } catch (err) {
+                  console.error(`Failed to fetch ${result.url}:`, err);
                 }
-                searchContext += '\n';
-              });
-              searchContext += '\nPlease use the above search results to answer the user\'s question. Cite the sources by their numbers [1], [2], etc.\n';
+              }
+              
+              // Format all page content for AI
+              if (pageContents.length > 0) {
+                searchContext = '\n\n=== WEB SEARCH RESULTS ===\n';
+                searchContext += `Query: "${lastUserMessage.content}"\n`;
+                searchContext += `Found ${pageContents.length} pages with full content:\n\n`;
+                
+                pageContents.forEach((page, index) => {
+                  searchContext += `\n[SOURCE ${index + 1}]\n`;
+                  searchContext += `Title: ${page.title}\n`;
+                  searchContext += `URL: ${page.url}\n`;
+                  searchContext += `Content:\n${page.content}\n`;
+                  searchContext += `${'='.repeat(80)}\n`;
+                });
+                
+                searchContext += '\n\nINSTRUCTIONS:\n';
+                searchContext += '- Use the above web page contents to answer the user\'s question\n';
+                searchContext += '- Synthesize information from multiple sources\n';
+                searchContext += '- Cite sources using [SOURCE 1], [SOURCE 2], etc.\n';
+                searchContext += '- Provide URLs when referencing specific information\n';
+                searchContext += '- If information conflicts between sources, acknowledge this\n';
+              }
             }
           } catch (searchErr) {
-            console.error('Search failed:', searchErr);
+            console.error('Search or content fetch failed:', searchErr);
           }
         }
         
@@ -333,7 +371,7 @@ const Index = () => {
             modelName: modelData.model_id,
             researchMode,
             studyMode,
-            webSurfingMode: false // Set to false since we already did the search
+            webSurfingMode: false
           }
         });
         if (error) throw error;
