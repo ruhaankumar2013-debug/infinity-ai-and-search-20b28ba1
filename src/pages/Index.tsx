@@ -45,6 +45,7 @@ const Index = () => {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [researchMode, setResearchMode] = useState(false);
   const [studyMode, setStudyMode] = useState(false);
+  const [webSurfingMode, setWebSurfingMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const {
@@ -300,7 +301,8 @@ const Index = () => {
             modelId: selectedModelId,
             modelName: modelData.model_id,
             researchMode,
-            studyMode
+            studyMode,
+            webSurfingMode
           }
         });
         if (error) throw error;
@@ -395,7 +397,7 @@ const Index = () => {
   }
   return <SidebarProvider>
       <div className="min-h-screen bg-background flex w-full">
-        <ConversationSidebar conversations={conversations} currentConversationId={currentConversationId} onSelectConversation={setCurrentConversationId} onNewConversation={createNewConversation} onDeleteConversation={deleteConversation} researchMode={researchMode} onResearchModeChange={setResearchMode} studyMode={studyMode} onStudyModeChange={setStudyMode} />
+        <ConversationSidebar conversations={conversations} currentConversationId={currentConversationId} onSelectConversation={setCurrentConversationId} onNewConversation={createNewConversation} onDeleteConversation={deleteConversation} researchMode={researchMode} onResearchModeChange={setResearchMode} studyMode={studyMode} onStudyModeChange={setStudyMode} webSurfingMode={webSurfingMode} onWebSurfingModeChange={setWebSurfingMode} />
 
         <div className="flex-1 flex flex-col">
           {/* Header */}
