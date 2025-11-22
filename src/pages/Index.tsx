@@ -444,7 +444,40 @@ const Index = () => {
         {viewMode === "chat" ? <div className="space-y-4">
             <ModelSelector selectedModelId={selectedModelId} onSelectModel={setSelectedModelId} />
           <Card className="h-[calc(100vh-18rem)] flex flex-col bg-card/50 backdrop-blur-sm border-border">
-...
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {messages.length === 0 && <div className="h-full flex items-center justify-center">
+                  <div className="text-center space-y-3">
+                    <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                      <MessageSquare className="w-8 h-8 text-background" />
+                    </div>
+                    <h2 className="text-xl font-semibold text-foreground">Start a conversation</h2>
+                    <p className="text-muted-foreground max-w-md">
+                      Ask me anything!
+                    </p>
+                  </div>
+                </div>}
+              {messages.map((msg, idx) => <ChatMessage key={idx} role={msg.role} content={msg.content} imageUrl={msg.imageUrl} />)}
+              {isLoading && messages[messages.length - 1]?.role === "user" && <div className="flex gap-3 p-4 rounded-lg bg-card mr-8">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 text-background animate-spin" />
+                  </div>
+                  <div className="flex-1 pt-1">
+                    <p className="text-sm text-muted-foreground">Thinking...</p>
+                  </div>
+                </div>}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="border-t border-border p-4 bg-background/50">
+              <div className="flex gap-2">
+                <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()} placeholder="Type your message..." disabled={isLoading} className="flex-1" />
+                <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
           </Card>
           </div> : viewMode === "search" ? <div className="h-[calc(100vh-12rem)] overflow-y-auto">
             <SearchTab />
