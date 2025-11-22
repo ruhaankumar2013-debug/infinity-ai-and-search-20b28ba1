@@ -288,7 +288,7 @@ const Index = () => {
       try {
         let searchContext = '';
         
-        // If web surfing mode is enabled, search first, fetch page content, then pass to AI
+        // If web surfing mode is enabled, search DuckDuckGo and use results
         if (webSurfingMode) {
           console.log('🌐 WEB SURFING MODE ENABLED - Starting search...');
           toast({
@@ -298,7 +298,7 @@ const Index = () => {
           });
           
           try {
-            console.log('Web surfing mode: searching DuckDuckGo...');
+            console.log('Searching DuckDuckGo for real-time information...');
             const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
               body: { query: lastUserMessage.content }
             });
@@ -312,87 +312,53 @@ const Index = () => {
                 duration: 3000,
               });
             } else if (searchData?.results && searchData.results.length > 0) {
-              console.log(`✅ Found ${searchData.results.length} search results, fetching page content...`);
+              console.log(`✅ Found ${searchData.results.length} search results`);
               toast({
-                title: "Found Results",
-                description: `Reading ${Math.min(5, searchData.results.length)} web pages...`,
+                title: "Search Complete",
+                description: `Found ${searchData.results.length} relevant sources`,
                 duration: 2000,
               });
               
-              // Take top 5 results and fetch their full content
-              const topResults = searchData.results.slice(0, 5);
-              const pageContents: Array<{ title: string; url: string; content: string }> = [];
+              // Format search results with titles, URLs, and snippets for AI
+              searchContext = '\n\n=== REAL-TIME WEB SEARCH RESULTS (CURRENT DATA) ===\n';
+              searchContext += `User Query: "${lastUserMessage.content}"\n`;
+              searchContext += `Search Date: ${new Date().toISOString()}\n`;
+              searchContext += `Found ${searchData.results.length} relevant sources:\n\n`;
               
-              // Fetch content from each URL
-              for (const result of topResults) {
-                try {
-                  console.log(`📄 Fetching content from: ${result.url}`);
-                  const { data: pageData, error: pageError } = await supabase.functions.invoke('web-search', {
-                    body: { 
-                      query: result.url,
-                      type: 'read'
-                    }
-                  });
-                  
-                  if (!pageError && pageData?.content) {
-                    console.log(`✅ Successfully fetched ${result.url} (${pageData.content.length} chars)`);
-                    pageContents.push({
-                      title: result.title,
-                      url: result.url,
-                      content: pageData.content.substring(0, 3000) // Limit to 3000 chars per page
-                    });
-                  } else {
-                    console.error(`❌ Failed to fetch ${result.url}:`, pageError);
-                  }
-                } catch (err) {
-                  console.error(`❌ Failed to fetch ${result.url}:`, err);
+              searchData.results.forEach((result: any, index: number) => {
+                searchContext += `\n[SOURCE ${index + 1}]\n`;
+                searchContext += `Title: ${result.title}\n`;
+                searchContext += `URL: ${result.url}\n`;
+                if (result.snippet) {
+                  searchContext += `Summary: ${result.snippet}\n`;
                 }
-              }
+                searchContext += `${'─'.repeat(80)}\n`;
+              });
               
-              // Format all page content for AI
-              if (pageContents.length > 0) {
-                console.log(`📚 Compiled ${pageContents.length} pages with full content`);
-                toast({
-                  title: "Pages Loaded",
-                  description: `Analyzing ${pageContents.length} web pages...`,
-                  duration: 2000,
-                });
-                
-                searchContext = '\n\n=== REAL-TIME WEB SEARCH RESULTS (LIVE DATA) ===\n';
-                searchContext += `User Query: "${lastUserMessage.content}"\n`;
-                searchContext += `Retrieved ${pageContents.length} pages with full content:\n\n`;
-                
-                pageContents.forEach((page, index) => {
-                  searchContext += `\n[SOURCE ${index + 1}]\n`;
-                  searchContext += `Title: ${page.title}\n`;
-                  searchContext += `URL: ${page.url}\n`;
-                  searchContext += `Full Content:\n${page.content}\n`;
-                  searchContext += `${'='.repeat(80)}\n`;
-                });
-                
-                searchContext += '\n\n⚠️ CRITICAL INSTRUCTIONS FOR AI:\n';
-                searchContext += '- YOU HAVE REAL-TIME WEB DATA ABOVE - USE IT!\n';
-                searchContext += '- DO NOT say you cannot access real-time information\n';
-                searchContext += '- DO NOT refer users to external websites\n';
-                searchContext += '- ANSWER using the web page contents provided above\n';
-                searchContext += '- Synthesize information from multiple sources\n';
-                searchContext += '- Cite sources using [SOURCE 1], [SOURCE 2], etc.\n';
-                searchContext += '- Provide URLs when referencing specific information\n';
-                searchContext += '- This is CURRENT, LIVE information from the web\n';
-              } else {
-                console.warn('⚠️ No page content could be fetched');
-                toast({
-                  title: "Page Fetch Failed",
-                  description: "Could not read web pages. Using search snippets only.",
-                  variant: "destructive",
-                  duration: 3000,
-                });
-              }
+              searchContext += '\n\n⚠️ CRITICAL INSTRUCTIONS:\n';
+              searchContext += '- YOU HAVE REAL-TIME SEARCH RESULTS ABOVE - USE THEM!\n';
+              searchContext += '- These are CURRENT web search results from ' + new Date().toLocaleDateString() + '\n';
+              searchContext += '- DO NOT say you cannot access real-time information\n';
+              searchContext += '- DO NOT refer users to external websites\n';
+              searchContext += '- ANSWER the question using the search results provided\n';
+              searchContext += '- Synthesize information from the titles and summaries above\n';
+              searchContext += '- Cite sources: [SOURCE 1], [SOURCE 2], etc.\n';
+              searchContext += '- Provide the URLs from the sources when relevant\n';
+              searchContext += '- If asked for "latest news", summarize what you found in the search results\n';
+              searchContext += '- This is LIVE, CURRENT information - treat it as such!\n';
+              
+              console.log('📚 Compiled search context for AI');
             } else {
               console.warn('⚠️ No search results found');
+              toast({
+                title: "No Results",
+                description: "Could not find relevant information on the web.",
+                variant: "destructive",
+                duration: 3000,
+              });
             }
           } catch (searchErr) {
-            console.error('❌ Search or content fetch failed:', searchErr);
+            console.error('❌ Search failed:', searchErr);
             toast({
               title: "Web Surfing Failed",
               description: "Could not access web. Using base knowledge.",
