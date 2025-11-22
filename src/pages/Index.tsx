@@ -286,6 +286,37 @@ const Index = () => {
     // Check if this is a Cloudflare Workers AI model (starts with @cf/) or Groq model (starts with @groq/))
     if (modelData.model_id.startsWith('@cf/') || modelData.model_id.startsWith('@groq/')) {
       try {
+        let searchContext = '';
+        
+        // If web surfing mode is enabled, search first and pass results to AI
+        if (webSurfingMode) {
+          try {
+            console.log('Web surfing mode: searching DuckDuckGo...');
+            const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
+              body: { query: lastUserMessage.content }
+            });
+            
+            if (searchError) {
+              console.error('Search error:', searchError);
+            } else if (searchData?.results && searchData.results.length > 0) {
+              console.log(`Found ${searchData.results.length} search results`);
+              // Format search results for AI
+              searchContext = '\n\nWEB SEARCH RESULTS for query "' + lastUserMessage.content + '":\n\n';
+              searchData.results.forEach((result: any, index: number) => {
+                searchContext += `[${index + 1}] ${result.title}\n`;
+                searchContext += `URL: ${result.url}\n`;
+                if (result.snippet) {
+                  searchContext += `Snippet: ${result.snippet}\n`;
+                }
+                searchContext += '\n';
+              });
+              searchContext += '\nPlease use the above search results to answer the user\'s question. Cite the sources by their numbers [1], [2], etc.\n';
+            }
+          } catch (searchErr) {
+            console.error('Search failed:', searchErr);
+          }
+        }
+        
         const {
           data,
           error
@@ -293,7 +324,7 @@ const Index = () => {
           body: {
             messages: [{
               role: "system",
-              content: systemPrompt
+              content: systemPrompt + searchContext
             }, {
               role: "user",
               content: lastUserMessage.content
@@ -302,7 +333,7 @@ const Index = () => {
             modelName: modelData.model_id,
             researchMode,
             studyMode,
-            webSurfingMode
+            webSurfingMode: false // Set to false since we already did the search
           }
         });
         if (error) throw error;
