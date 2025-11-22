@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeEntry } from "./KnowledgeEntry";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { z } from "zod";
 
 interface KnowledgeEntryType {
   id: string;
@@ -29,6 +30,18 @@ interface AdminPanelProps {
   knowledgeEntries: KnowledgeEntryType[];
   onRefresh: () => void;
 }
+
+// Validation schema
+const knowledgeSchema = z.object({
+  title: z.string()
+    .trim()
+    .min(1, "Title cannot be empty")
+    .max(200, "Title must be less than 200 characters"),
+  content: z.string()
+    .trim()
+    .min(1, "Content cannot be empty")
+    .max(50000, "Content must be less than 50,000 characters"),
+});
 
 export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => {
   const [title, setTitle] = useState("");
@@ -61,10 +74,16 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
   };
 
   const handleAddKnowledge = async () => {
-    if (!title.trim() || !content.trim()) {
+    // Validate input
+    const validation = knowledgeSchema.safeParse({
+      title,
+      content,
+    });
+    
+    if (!validation.success) {
       toast({
-        title: "Missing fields",
-        description: "Please provide both title and content",
+        title: "Invalid input",
+        description: validation.error.errors[0].message,
         variant: "destructive",
       });
       return;
