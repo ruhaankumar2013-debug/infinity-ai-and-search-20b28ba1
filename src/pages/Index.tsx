@@ -494,7 +494,24 @@ const Index = () => {
                     <Code2 className="w-6 h-6 text-background" />
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold text-foreground">Infinity AI</h1>
+                    <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                      Infinity AI
+                      {webSurfingMode && (
+                        <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded-full animate-pulse">
+                          WEB SURFING
+                        </span>
+                      )}
+                      {researchMode && (
+                        <span className="text-xs bg-purple-500 text-white px-2 py-1 rounded-full">
+                          RESEARCH
+                        </span>
+                      )}
+                      {studyMode && (
+                        <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
+                          STUDY
+                        </span>
+                      )}
+                    </h1>
                     <p className="text-xs text-muted-foreground">Apache 2.0 Models • Cloudflare AI</p>
                   </div>
                 </div>

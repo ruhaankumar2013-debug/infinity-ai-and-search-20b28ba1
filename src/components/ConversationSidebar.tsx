@@ -119,14 +119,27 @@ export function ConversationSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-border p-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4 text-primary" />
+        <div className="space-y-4">
+          <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            AI MODES
+          </div>
+          
+          <div className="flex items-center justify-between gap-2 p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
+            <div className="flex items-center gap-2 flex-1">
+              <div className={cn(
+                "p-1.5 rounded-md transition-colors",
+                researchMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>
+                <Brain className="h-4 w-4" />
+              </div>
               {open && (
-                <Label htmlFor="research-mode" className="text-sm font-medium cursor-pointer">
-                  Research Mode
-                </Label>
+                <div>
+                  <Label htmlFor="research-mode" className="text-sm font-medium cursor-pointer">
+                    Research Mode
+                  </Label>
+                  {researchMode && <p className="text-xs text-muted-foreground">Deep analysis active</p>}
+                </div>
               )}
             </div>
             <Switch
@@ -135,19 +148,22 @@ export function ConversationSidebar({
               onCheckedChange={onResearchModeChange}
             />
           </div>
-          {open && researchMode && (
-            <p className="text-xs text-muted-foreground">
-              Deep thinking enabled for thorough analysis
-            </p>
-          )}
           
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <GraduationCap className="h-4 w-4 text-primary" />
+          <div className="flex items-center justify-between gap-2 p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors">
+            <div className="flex items-center gap-2 flex-1">
+              <div className={cn(
+                "p-1.5 rounded-md transition-colors",
+                studyMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>
+                <GraduationCap className="h-4 w-4" />
+              </div>
               {open && (
-                <Label htmlFor="study-mode" className="text-sm font-medium cursor-pointer">
-                  Study Mode
-                </Label>
+                <div>
+                  <Label htmlFor="study-mode" className="text-sm font-medium cursor-pointer">
+                    Study Mode
+                  </Label>
+                  {studyMode && <p className="text-xs text-muted-foreground">Learning assistant active</p>}
+                </div>
               )}
             </div>
             <Switch
@@ -156,19 +172,25 @@ export function ConversationSidebar({
               onCheckedChange={handleStudyModeChange}
             />
           </div>
-          {open && studyMode && (
-            <p className="text-xs text-muted-foreground">
-              Get study assistance and personalized plans
-            </p>
-          )}
           
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-primary" />
+          <div className="flex items-center justify-between gap-2 p-3 rounded-lg border border-primary/50 bg-gradient-to-r from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10 transition-all">
+            <div className="flex items-center gap-2 flex-1">
+              <div className={cn(
+                "p-1.5 rounded-md transition-colors",
+                webSurfingMode ? "bg-primary text-primary-foreground animate-pulse" : "bg-muted text-muted-foreground"
+              )}>
+                <Globe className="h-4 w-4" />
+              </div>
               {open && (
-                <Label htmlFor="web-surfing-mode" className="text-sm font-medium cursor-pointer">
-                  Web Surfing
-                </Label>
+                <div>
+                  <Label htmlFor="web-surfing-mode" className="text-sm font-semibold cursor-pointer flex items-center gap-1">
+                    Web Surfing
+                    {webSurfingMode && <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">LIVE</span>}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {webSurfingMode ? "Real-time web search enabled" : "Search the web in real-time"}
+                  </p>
+                </div>
               )}
             </div>
             <Switch
@@ -177,11 +199,6 @@ export function ConversationSidebar({
               onCheckedChange={onWebSurfingModeChange}
             />
           </div>
-          {open && webSurfingMode && (
-            <p className="text-xs text-muted-foreground">
-              AI uses web search for real-time information
-            </p>
-          )}
         </div>
       </SidebarFooter>
     </Sidebar>
