@@ -20,18 +20,21 @@ export type Database = {
           created_at: string | null
           id: string
           role: string
+          user_id: string
         }
         Insert: {
           content: string
           created_at?: string | null
           id?: string
           role: string
+          user_id: string
         }
         Update: {
           content?: string
           created_at?: string | null
           id?: string
           role?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -42,7 +45,7 @@ export type Database = {
           model_id: string | null
           title: string
           updated_at: string
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -50,7 +53,7 @@ export type Database = {
           model_id?: string | null
           title?: string
           updated_at?: string
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string
@@ -58,7 +61,7 @@ export type Database = {
           model_id?: string | null
           title?: string
           updated_at?: string
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -116,7 +119,7 @@ export type Database = {
           id: string
           image_url: string | null
           role: string
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           content: string
@@ -125,7 +128,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           role: string
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           content?: string
@@ -134,7 +137,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           role?: string
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: [
           {

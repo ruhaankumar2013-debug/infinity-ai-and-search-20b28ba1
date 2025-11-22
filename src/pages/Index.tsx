@@ -13,6 +13,7 @@ import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
 import { SearchTab } from "@/components/SearchTab";
 import type { User, Session } from "@supabase/supabase-js";
+import { z } from "zod";
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -31,6 +32,15 @@ interface KnowledgeEntry {
   created_at: string;
   model_id: string | null;
 }
+
+// Input validation schema
+const messageSchema = z.object({
+  content: z.string()
+    .trim()
+    .min(1, "Message cannot be empty")
+    .max(10000, "Message must be less than 10,000 characters"),
+});
+
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -175,11 +185,14 @@ const Index = () => {
     setMessages(formattedMessages);
   };
   const createNewConversation = async () => {
+    if (!user) return;
+    
     const {
       data,
       error
     } = await supabase.from("conversations").insert({
-      title: "New Conversation"
+      title: "New Conversation",
+      user_id: user.id
     }).select().single();
     if (error) {
       console.error("Error creating conversation:", error);
@@ -415,7 +428,18 @@ const Index = () => {
     }
   };
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (isLoading || !user) return;
+
+    // Validate input
+    const validation = messageSchema.safeParse({ content: input });
+    if (!validation.success) {
+      toast({
+        title: "Invalid input",
+        description: validation.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Create new conversation if none exists
     let conversationId = currentConversationId;
@@ -424,7 +448,8 @@ const Index = () => {
         data,
         error
       } = await supabase.from("conversations").insert({
-        title: "New Conversation"
+        title: "New Conversation",
+        user_id: user.id
       }).select().single();
       if (error || !data) {
         toast({
@@ -451,7 +476,8 @@ const Index = () => {
     await supabase.from("messages").insert({
       conversation_id: conversationId,
       role: "user",
-      content: userMessage.content
+      content: userMessage.content,
+      user_id: user.id
     });
 
     // Update conversation title with first message
