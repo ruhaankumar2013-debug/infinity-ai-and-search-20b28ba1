@@ -11,3 +11,6 @@ verify_jwt = true
 
 [functions.web-search]
 verify_jwt = true
+
+[functions.duckduckgo-search]
+verify_jwt = true

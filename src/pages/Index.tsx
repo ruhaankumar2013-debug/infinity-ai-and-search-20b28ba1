@@ -11,11 +11,13 @@ import { AdminPanel } from "@/components/AdminPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
+import { SearchResults } from "@/components/SearchResults";
 import type { User, Session } from "@supabase/supabase-js";
 interface Message {
   role: "user" | "assistant";
   content: string;
   imageUrl?: string;
+  searchResults?: Array<{ title: string; url: string; snippet: string }>;
 }
 interface Conversation {
   id: string;
@@ -45,6 +47,7 @@ const Index = () => {
   const [researchMode, setResearchMode] = useState(false);
   const [studyMode, setStudyMode] = useState(false); // Study mode for learning assistance
   const [webSurfingMode, setWebSurfingMode] = useState(false); // Web surfing mode for real-time search
+  const [searchResults, setSearchResults] = useState<Array<{ title: string; url: string; snippet: string }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const {
@@ -282,6 +285,35 @@ const Index = () => {
         throw new Error(`Failed to generate image. Please try again.`);
       }
     }
+    // Check if web surfing mode is enabled - perform search first
+    if (webSurfingMode) {
+      try {
+        const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
+          body: { query: lastUserMessage.content }
+        });
+        
+        if (searchError) throw searchError;
+        
+        if (searchData?.results && searchData.results.length > 0) {
+          setSearchResults(searchData.results);
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `Found ${searchData.results.length} search results for your query.`,
+            searchResults: searchData.results
+          }]);
+          return;
+        } else {
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: "No search results found for your query."
+          }]);
+          return;
+        }
+      } catch (error) {
+        console.error("Search error:", error);
+        throw new Error("Failed to perform web search. Please try again.");
+      }
+    }
     // Check if this is a Cloudflare Workers AI model (starts with @cf/) or Groq model (starts with @groq/)
     else if (modelData.model_id.startsWith('@cf/') || modelData.model_id.startsWith('@groq/')) {
       try {
@@ -452,7 +484,16 @@ const Index = () => {
                     </p>
                   </div>
                 </div>}
-              {messages.map((msg, idx) => <ChatMessage key={idx} role={msg.role} content={msg.content} imageUrl={msg.imageUrl} />)}
+              {messages.map((msg, idx) => (
+                <div key={idx} className="space-y-3">
+                  <ChatMessage role={msg.role} content={msg.content} imageUrl={msg.imageUrl} />
+                  {msg.searchResults && msg.searchResults.length > 0 && (
+                    <div className="ml-12">
+                      <SearchResults results={msg.searchResults} query="" />
+                    </div>
+                  )}
+                </div>
+              ))}
               {isLoading && messages[messages.length - 1]?.role === "user" && <div className="flex gap-3 p-4 rounded-lg bg-card mr-8">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
                     <Loader2 className="w-4 h-4 text-background animate-spin" />
