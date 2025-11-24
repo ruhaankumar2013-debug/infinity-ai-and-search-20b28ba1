@@ -1,13 +1,14 @@
 import { cn } from "@/lib/utils";
-import { Bot, User } from "lucide-react";
+import { Bot, User, Loader2 } from "lucide-react";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   imageUrl?: string;
+  isStreaming?: boolean;
 }
 
-export const ChatMessage = ({ role, content, imageUrl }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, imageUrl, isStreaming = false }: ChatMessageProps) => {
   return (
     <div
       className={cn(
@@ -28,7 +29,14 @@ export const ChatMessage = ({ role, content, imageUrl }: ChatMessageProps) => {
         {role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
       </div>
       <div className="flex-1 pt-1">
-        <p className="text-sm text-foreground whitespace-pre-wrap">{content}</p>
+        {content ? (
+          <p className="text-sm text-foreground whitespace-pre-wrap">{content}</p>
+        ) : isStreaming ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Thinking...</span>
+          </div>
+        ) : null}
         {imageUrl && (
           <div className="mt-3">
             <img 

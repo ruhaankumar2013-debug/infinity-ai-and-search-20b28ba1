@@ -45,6 +45,7 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [viewMode, setViewMode] = useState<"chat" | "admin" | "search">("chat");
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -386,6 +387,7 @@ const Index = () => {
         
         // Add placeholder message that will be updated
         let streamedContent = '';
+        setIsStreaming(true);
         setMessages(prev => [...prev, {
           role: "assistant",
           content: streamedContent
@@ -417,6 +419,7 @@ const Index = () => {
         );
         
         if (!response.ok || !response.body) {
+          setIsStreaming(false);
           throw new Error('Failed to start streaming');
         }
         
@@ -462,9 +465,11 @@ const Index = () => {
           }
         }
         
+        setIsStreaming(false);
         assistantContent = streamedContent;
       } catch (error) {
         console.error("AI error:", error);
+        setIsStreaming(false);
         throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
       }
     } else {
@@ -639,7 +644,7 @@ const Index = () => {
                     </p>
                   </div>
                 </div>}
-              {messages.map((msg, idx) => <ChatMessage key={idx} role={msg.role} content={msg.content} imageUrl={msg.imageUrl} />)}
+              {messages.map((msg, idx) => <ChatMessage key={idx} role={msg.role} content={msg.content} imageUrl={msg.imageUrl} isStreaming={isStreaming && idx === messages.length - 1 && msg.role === "assistant"} />)}
               {isLoading && messages[messages.length - 1]?.role === "user" && <div className="flex gap-3 p-4 rounded-lg bg-card mr-8">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
                     <Loader2 className="w-4 h-4 text-background animate-spin" />
