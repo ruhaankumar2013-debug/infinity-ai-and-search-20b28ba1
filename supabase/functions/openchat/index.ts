@@ -241,8 +241,8 @@ First, thoroughly search the knowledge base below for relevant information. If f
     let response;
     
     if (isGroqModel) {
-      // Groq API call
-      console.log(`[openchat] Calling Groq API with ${modelName}...`);
+      // Groq API call with streaming
+      console.log(`[openchat] Calling Groq API with ${modelName} (streaming)...`);
       const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
       
       // Extract actual model name (remove @groq/ prefix)
@@ -259,6 +259,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
           messages: chatMessages,
           temperature: 0.7,
           max_tokens: 8192,
+          stream: true,
         }),
       });
     } else {
@@ -326,6 +327,15 @@ First, thoroughly search the knowledge base below for relevant information. If f
       );
     }
 
+    // For Groq streaming, return the stream directly
+    if (isGroqModel) {
+      console.log('[openchat] Returning Groq stream to client...');
+      return new Response(response.body, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+      });
+    }
+
+    // For Cloudflare (non-streaming), parse and return JSON
     const result = await response.json();
     console.log('[openchat] API response structure:', JSON.stringify(result).substring(0, 200));
     

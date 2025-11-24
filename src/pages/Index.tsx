@@ -381,31 +381,120 @@ const Index = () => {
           }
         }
         
-        const {
-          data,
-          error
-        } = await supabase.functions.invoke('openchat', {
-          body: {
-            messages: [{
-              role: "system",
-              content: systemPrompt + searchContext
-            }, {
-              role: "user",
-              content: lastUserMessage.content
-            }],
-            modelId: selectedModelId,
-            modelName: modelData.model_id,
-            researchMode,
-            studyMode,
-            webSurfingMode: false
+        // Check if this is a Groq model (streaming supported)
+        const isGroqModel = modelData.model_id.startsWith('@groq/');
+        
+        if (isGroqModel) {
+          // Groq models support streaming - use fetch for SSE
+          console.log('🚀 Starting streaming response from Groq...');
+          
+          // Add placeholder message that will be updated
+          let streamedContent = '';
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: streamedContent
+          }]);
+          
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              body: JSON.stringify({
+                messages: [{
+                  role: "system",
+                  content: systemPrompt + searchContext
+                }, {
+                  role: "user",
+                  content: lastUserMessage.content
+                }],
+                modelId: selectedModelId,
+                modelName: modelData.model_id,
+                researchMode,
+                studyMode,
+                webSurfingMode: false
+              }),
+            }
+          );
+          
+          if (!response.ok || !response.body) {
+            throw new Error('Failed to start streaming');
           }
-        });
-        if (error) throw error;
-        assistantContent = data.response;
-        setMessages(prev => [...prev, {
-          role: "assistant",
-          content: assistantContent
-        }]);
+          
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Process SSE events
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (!line.trim() || line.startsWith(':')) continue;
+              if (!line.startsWith('data: ')) continue;
+              
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) {
+                  streamedContent += delta;
+                  // Update the last message with accumulated content
+                  setMessages(prev => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1] = {
+                      role: "assistant",
+                      content: streamedContent
+                    };
+                    return newMessages;
+                  });
+                }
+              } catch (e) {
+                // Skip invalid JSON
+              }
+            }
+          }
+          
+          assistantContent = streamedContent;
+        } else {
+          // Cloudflare models - use regular invoke (no streaming)
+          const {
+            data,
+            error
+          } = await supabase.functions.invoke('openchat', {
+            body: {
+              messages: [{
+                role: "system",
+                content: systemPrompt + searchContext
+              }, {
+                role: "user",
+                content: lastUserMessage.content
+              }],
+              modelId: selectedModelId,
+              modelName: modelData.model_id,
+              researchMode,
+              studyMode,
+              webSurfingMode: false
+            }
+          });
+          if (error) throw error;
+          assistantContent = data.response;
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: assistantContent
+          }]);
+        }
       } catch (error) {
         console.error("AI error:", error);
         throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
