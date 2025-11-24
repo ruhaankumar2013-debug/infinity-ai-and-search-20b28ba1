@@ -300,6 +300,88 @@ const Index = () => {
     // Check if this is a Cloudflare Workers AI model (starts with @cf/) or Groq model (starts with @groq/))
     if (modelData.model_id.startsWith('@cf/') || modelData.model_id.startsWith('@groq/')) {
       try {
+        let searchContext = '';
+        
+        // If web surfing mode is enabled, search DuckDuckGo and use results
+        if (webSurfingMode) {
+          console.log('🌐 WEB SURFING MODE ENABLED - Starting search...');
+          toast({
+            title: "Web Surfing Mode Active",
+            description: "Searching the web for latest information...",
+            duration: 2000,
+          });
+          
+          try {
+            console.log('Searching DuckDuckGo for real-time information...');
+            const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
+              body: { query: lastUserMessage.content }
+            });
+            
+            if (searchError) {
+              console.error('❌ Search error:', searchError);
+              toast({
+                title: "Search Failed",
+                description: "Could not search the web. Using base knowledge.",
+                variant: "destructive",
+                duration: 3000,
+              });
+            } else if (searchData?.results && searchData.results.length > 0) {
+              console.log(`✅ Found ${searchData.results.length} search results`);
+              toast({
+                title: "Search Complete",
+                description: `Found ${searchData.results.length} relevant sources`,
+                duration: 2000,
+              });
+              
+              // Format search results with titles, URLs, and snippets for AI
+              searchContext = '\n\n=== REAL-TIME WEB SEARCH RESULTS (CURRENT DATA) ===\n';
+              searchContext += `User Query: "${lastUserMessage.content}"\n`;
+              searchContext += `Search Date: ${new Date().toISOString()}\n`;
+              searchContext += `Found ${searchData.results.length} relevant sources:\n\n`;
+              
+              searchData.results.forEach((result: any, index: number) => {
+                searchContext += `\n[SOURCE ${index + 1}]\n`;
+                searchContext += `Title: ${result.title}\n`;
+                searchContext += `URL: ${result.url}\n`;
+                if (result.snippet) {
+                  searchContext += `Summary: ${result.snippet}\n`;
+                }
+                searchContext += `${'─'.repeat(80)}\n`;
+              });
+              
+              searchContext += '\n\n⚠️ CRITICAL INSTRUCTIONS:\n';
+              searchContext += '- YOU HAVE REAL-TIME SEARCH RESULTS ABOVE - USE THEM!\n';
+              searchContext += '- These are CURRENT web search results from ' + new Date().toLocaleDateString() + '\n';
+              searchContext += '- DO NOT say you cannot access real-time information\n';
+              searchContext += '- DO NOT refer users to external websites\n';
+              searchContext += '- ANSWER the question using the search results provided\n';
+              searchContext += '- Synthesize information from the titles and summaries above\n';
+              searchContext += '- Cite sources: [SOURCE 1], [SOURCE 2], etc.\n';
+              searchContext += '- Provide the URLs from the sources when relevant\n';
+              searchContext += '- If asked for "latest news", summarize what you found in the search results\n';
+              searchContext += '- This is LIVE, CURRENT information - treat it as such!\n';
+              
+              console.log('📚 Compiled search context for AI');
+            } else {
+              console.warn('⚠️ No search results found');
+              toast({
+                title: "No Results",
+                description: "Could not find relevant information on the web.",
+                variant: "destructive",
+                duration: 3000,
+              });
+            }
+          } catch (searchErr) {
+            console.error('❌ Search failed:', searchErr);
+            toast({
+              title: "Web Surfing Failed",
+              description: "Could not access web. Using base knowledge.",
+              variant: "destructive",
+              duration: 3000,
+            });
+          }
+        }
+        
         // All models now support streaming - use fetch for SSE
         console.log('🚀 Starting streaming response...');
         
@@ -320,12 +402,18 @@ const Index = () => {
               'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
             },
             body: JSON.stringify({
-              messages: [...messages],
+              messages: [{
+                role: "system",
+                content: systemPrompt + searchContext
+              }, {
+                role: "user",
+                content: lastUserMessage.content
+              }],
               modelId: selectedModelId,
               modelName: modelData.model_id,
               researchMode,
               studyMode,
-              webSurfingMode: webSurfingMode
+              webSurfingMode: false
             }),
           }
         );
@@ -341,10 +429,7 @@ const Index = () => {
         
         while (true) {
           const { done, value } = await reader.read();
-          if (done) {
-            console.log('✅ Stream complete. Total content length:', streamedContent.length);
-            break;
-          }
+          if (done) break;
           
           buffer += decoder.decode(value, { stream: true });
           
@@ -357,10 +442,7 @@ const Index = () => {
             if (!line.startsWith('data: ')) continue;
             
             const data = line.slice(6);
-            if (data === '[DONE]') {
-              console.log('📍 Received [DONE] signal');
-              continue;
-            }
+            if (data === '[DONE]') continue;
             
             try {
               const parsed = JSON.parse(data);
@@ -379,36 +461,6 @@ const Index = () => {
               }
             } catch (e) {
               // Skip invalid JSON
-            }
-          }
-        }
-        
-        // Process any remaining data in buffer (final flush)
-        if (buffer.trim()) {
-          const remainingLines = buffer.split('\n');
-          for (const line of remainingLines) {
-            if (!line.trim() || line.startsWith(':')) continue;
-            if (!line.startsWith('data: ')) continue;
-            
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            
-            try {
-              const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) {
-                streamedContent += delta;
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1] = {
-                    role: "assistant",
-                    content: streamedContent
-                  };
-                  return newMessages;
-                });
-              }
-            } catch (e) {
-              console.warn('Failed to parse final buffer:', e);
             }
           }
         }

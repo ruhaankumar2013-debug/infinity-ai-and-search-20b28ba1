@@ -45,10 +45,10 @@ export const ModelSelector = ({ selectedModelId, onSelectModel }: ModelSelectorP
 
     setModels(data || []);
     
-    // Auto-select Llama 3.1 70B as default if none selected
+    // Auto-select Mistral 7B as default if none selected
     if (data && data.length > 0 && !selectedModelId) {
-      const llamaModel = data.find(m => m.name === 'llama-3.1-70b-instruct');
-      onSelectModel(llamaModel ? llamaModel.id : data[0].id);
+      const mistralModel = data.find(m => m.name === 'mistral-7b-instruct');
+      onSelectModel(mistralModel ? mistralModel.id : data[0].id);
     }
     
     setIsLoading(false);
