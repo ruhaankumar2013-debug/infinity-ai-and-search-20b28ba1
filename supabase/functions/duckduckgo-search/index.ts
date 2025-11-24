@@ -29,8 +29,8 @@ serve(async (req) => {
 
     console.log('Searching DuckDuckGo for:', query);
 
-    // Use DuckDuckGo's HTML interface
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    // Use DuckDuckGo's lite HTML interface for more reliable parsing
+    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
     
     const response = await fetch(searchUrl, {
       headers: {
@@ -45,82 +45,62 @@ serve(async (req) => {
     const html = await response.text();
     console.log('Received HTML, length:', html.length);
     
-    // Parse HTML results
+    // Parse HTML results - DuckDuckGo Lite uses simpler table structure
     const results: SearchResult[] = [];
     
-    // DuckDuckGo HTML structure uses divs with class "result"
-    const resultRegex = /<div class="result[^"]*">(.*?)<\/div>[\s\S]*?(?=<div class="result|$)/gi;
-    const matches = html.matchAll(resultRegex);
+    // Match table rows containing search results
+    const rowRegex = /<tr>[\s\S]*?<td[^>]*>[\s\S]*?<a[^>]*href=["']([^"']+)["'][^>]*class=["']result-link["'][^>]*>([\s\S]*?)<\/a>[\s\S]*?<td[^>]*class=["']result-snippet["'][^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
     
-    for (const match of matches) {
-      if (results.length >= 10) break;
+    let match;
+    while ((match = rowRegex.exec(html)) !== null && results.length < 10) {
+      let url = match[1];
+      const title = match[2].replace(/<[^>]*>/g, '').trim();
+      const snippet = match[3].replace(/<[^>]*>/g, '').trim();
       
-      const resultHtml = match[0];
-      
-      // Extract title and URL
-      const linkMatch = resultHtml.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/s);
-      if (!linkMatch) continue;
-      
-      let url = linkMatch[1];
-      // DuckDuckGo uses redirect URLs, extract the actual URL
-      const urlMatch = url.match(/uddg=([^&]+)/);
-      if (urlMatch) {
-        url = decodeURIComponent(urlMatch[1]);
-      }
-      
-      const title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
-      
-      // Extract snippet
-      const snippetMatch = resultHtml.match(/<a[^>]*class="result__snippet"[^>]*>(.*?)<\/a>/s);
-      let snippet = '';
-      if (snippetMatch) {
-        snippet = snippetMatch[1].replace(/<[^>]*>/g, '').trim();
+      // Decode URL if it's encoded
+      if (url.includes('//duckduckgo.com/l/?')) {
+        const uddgMatch = url.match(/uddg=([^&]+)/);
+        if (uddgMatch) {
+          url = decodeURIComponent(uddgMatch[1]);
+        }
       }
       
       // Skip invalid results
-      if (!url || !title || url.includes('duckduckgo.com')) continue;
+      if (!url || !title || url.includes('duckduckgo.com/y.js')) continue;
       
       results.push({
         title: title,
         url: url,
-        snippet: snippet,
+        snippet: snippet || '',
       });
     }
 
-    // Fallback: try alternate parsing if no results found
+    // If no results, try simpler link extraction
     if (results.length === 0) {
       console.log('Trying alternate parsing method');
-      const linkRegex = /<a[^>]*class="result__url"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gs;
-      const titleRegex = /<h2[^>]*class="result__title"[^>]*>.*?<a[^>]*>(.*?)<\/a>/gs;
       
-      const links: string[] = [];
-      const titles: string[] = [];
+      // Look for any links in result tables
+      const simpleLinkRegex = /<a[^>]*class=["']?result-link["']?[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
       
       let linkMatch;
-      while ((linkMatch = linkRegex.exec(html)) !== null && links.length < 10) {
+      while ((linkMatch = simpleLinkRegex.exec(html)) !== null && results.length < 10) {
         let url = linkMatch[1];
-        const urlMatch = url.match(/uddg=([^&]+)/);
-        if (urlMatch) {
-          url = decodeURIComponent(urlMatch[1]);
+        const title = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+        
+        // Decode URL
+        if (url.includes('uddg=')) {
+          const uddgMatch = url.match(/uddg=([^&]+)/);
+          if (uddgMatch) {
+            url = decodeURIComponent(uddgMatch[1]);
+          }
         }
-        if (url && !url.includes('duckduckgo.com')) {
-          links.push(url);
-        }
-      }
-      
-      let titleMatch;
-      while ((titleMatch = titleRegex.exec(html)) !== null && titles.length < 10) {
-        const title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
-        if (title) {
-          titles.push(title);
-        }
-      }
-      
-      const minLength = Math.min(links.length, titles.length, 10);
-      for (let i = 0; i < minLength; i++) {
+        
+        // Skip invalid URLs
+        if (!url || !title || url.includes('duckduckgo.com') || url.startsWith('/')) continue;
+        
         results.push({
-          title: titles[i],
-          url: links[i],
+          title: title,
+          url: url,
           snippet: '',
         });
       }
