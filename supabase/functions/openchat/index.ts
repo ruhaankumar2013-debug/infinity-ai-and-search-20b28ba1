@@ -203,39 +203,32 @@ First, thoroughly search the knowledge base below for relevant information. If f
     // Enhanced message handling for web surfing mode
     let enrichedMessages = [...messages];
     
-    // Check if the last user message contains a web search request in web surfing mode
+    // In web surfing mode, automatically perform a web search on the latest user message
     if (webSurfingMode && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role === 'user') {
-        // Check for search keywords or patterns
-        const searchKeywords = ['search for', 'look up', 'find information about', 'what is the latest', 'current', 'recent'];
-        const needsWebSearch = searchKeywords.some(keyword => 
-          lastMessage.content.toLowerCase().includes(keyword)
-        );
+      if (lastMessage.role === 'user' && typeof lastMessage.content === 'string' && lastMessage.content.trim().length > 5) {
+        try {
+          console.log('[openchat] Web Surfing Mode enabled – calling web-search function...');
+          const { data: searchData, error: searchError } = await supabase.functions.invoke('web-search', {
+            body: {
+              query: lastMessage.content,
+              type: 'search',
+            },
+          });
 
-        if (needsWebSearch) {
-          console.log('[openchat] Detected web search request, calling web-search function...');
-          try {
-            const { data: searchData, error: searchError } = await supabase.functions.invoke('web-search', {
-              body: {
-                query: lastMessage.content,
-                type: 'search'
-              }
+          if (searchError) {
+            console.error('[openchat] Web search error:', searchError);
+          } else if (searchData?.content) {
+            console.log('[openchat] Web search successful, adding context to messages');
+            enrichedMessages.push({
+              role: 'system',
+              content: `[WEB SEARCH RESULTS]\n${searchData.content.substring(0, 4000)}\n[END OF WEB SEARCH RESULTS]\n\nUse the above web search results to answer the user\'s question. Cite sources when appropriate.`,
             });
-
-            if (searchError) {
-              console.error('[openchat] Web search error:', searchError);
-            } else if (searchData?.content) {
-              console.log('[openchat] Web search successful, adding context to messages');
-              // Add search results as a system message
-              enrichedMessages.push({
-                role: 'system',
-                content: `[WEB SEARCH RESULTS]\n${searchData.content.substring(0, 4000)}\n[END OF WEB SEARCH RESULTS]\n\nUse the above web search results to answer the user's question. Cite sources when appropriate.`
-              });
-            }
-          } catch (e) {
-            console.error('[openchat] Error calling web-search:', e);
+          } else {
+            console.log('[openchat] Web search returned no content');
           }
+        } catch (e) {
+          console.error('[openchat] Error calling web-search:', e);
         }
       }
     }
