@@ -298,7 +298,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
           }
         );
       } else {
-        // Standard chat completions format for other models
+        // Standard chat completions format for other models with streaming
         response = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions`,
           {
@@ -310,7 +310,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
             body: JSON.stringify({
               model: modelName,
               messages: chatMessages,
-              stream: false,
+              stream: true,
             }),
           }
         );
@@ -327,47 +327,12 @@ First, thoroughly search the knowledge base below for relevant information. If f
       );
     }
 
-    // For Groq streaming, return the stream directly
-    if (isGroqModel) {
-      console.log('[openchat] Returning Groq stream to client...');
-      return new Response(response.body, {
-        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-      });
-    }
-
-    // For Cloudflare (non-streaming), parse and return JSON
-    const result = await response.json();
-    console.log('[openchat] API response structure:', JSON.stringify(result).substring(0, 200));
-    
-    // Extract text from Responses API (gpt-oss-120b) if present
-    let aiResponse = '';
-    if (Array.isArray(result?.output)) {
-      try {
-        const msg = [...result.output].reverse().find((o: any) => o?.type === 'message');
-        const txt = msg?.content?.find((c: any) => c?.type === 'output_text')?.text;
-        if (typeof txt === 'string' && txt.length > 0) {
-          aiResponse = txt;
-        }
-      } catch (e) {
-        console.error('[openchat] Failed to parse Responses API output:', e);
-      }
-    }
-
-    // Fallbacks for Chat Completions and other formats
-    if (!aiResponse) {
-      aiResponse = result.result?.response || result.response || result.choices?.[0]?.message?.content || result.text || 'No response';
-    }
-
-    if (aiResponse === 'No response') {
-      console.error('[openchat] Could not extract response from result:', JSON.stringify(result));
-    }
-
-    console.log('[openchat] Sending response back to client...');
-
-    return new Response(
-      JSON.stringify({ response: aiResponse }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    // Return the stream directly for both Groq and Cloudflare
+    const apiName = isGroqModel ? 'Groq' : 'Cloudflare';
+    console.log(`[openchat] Returning ${apiName} stream to client...`);
+    return new Response(response.body, {
+      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+    });
   } catch (e) {
     console.error('[openchat] Chat error:', e);
     return new Response(
