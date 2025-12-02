@@ -5,22 +5,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Basic input validation
-const validateInput = (data: any) => {
-  const errors: string[] = [];
-
-  if (!data.query || typeof data.query !== "string") {
-    errors.push("query must be a non-empty string");
-  } else if (data.query.length > 500) {
-    errors.push("query cannot exceed 500 characters");
-  }
-
-  if (data.type && !["search", "read"].includes(data.type)) {
-    errors.push("type must be either 'search' or 'read'");
-  }
-
-  return errors;
-};
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -30,126 +19,178 @@ serve(async (req) => {
   try {
     const { query, type = "search" } = await req.json();
 
-    const validationErrors = validateInput({ query, type });
-    if (validationErrors.length > 0) {
-      console.error("[web-search] Validation errors:", validationErrors);
+    if (!query || typeof query !== "string") {
       return new Response(
-        JSON.stringify({ error: "Invalid input", details: validationErrors }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({ error: "query must be a non-empty string", results: [] }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     console.log(`[web-search] Performing ${type} for:`, query);
 
     if (type === "search") {
-      // Use DuckDuckGo HTML interface for search
+      const results: SearchResult[] = [];
+      
+      // Try DuckDuckGo HTML interface
       const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      console.log("[web-search] Calling DuckDuckGo:", searchUrl);
+      console.log("[web-search] Fetching:", searchUrl);
 
       const response = await fetch(searchUrl, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5",
         },
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        console.error("[web-search] DuckDuckGo error:", response.status, text.slice(0, 500));
+        console.error("[web-search] DuckDuckGo error:", response.status);
         return new Response(
-          JSON.stringify({ error: `DuckDuckGo error: ${response.status}` }),
-          { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          JSON.stringify({ error: `Search failed: ${response.status}`, results: [] }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       const html = await response.text();
-      console.log("[web-search] Received HTML length:", html.length);
+      console.log("[web-search] HTML length:", html.length);
 
-      // Parse results into a markdown summary for the AI
-      let content = `# Web Search Results\n\nQuery: "${query}"\n\n`;
+      // Strategy 1: Parse result blocks with class="result"
+      const resultBlockRegex = /<div[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*result|<\/body|$)/gi;
+      let blockMatches = [...html.matchAll(resultBlockRegex)];
+      
+      console.log(`[web-search] Strategy 1: Found ${blockMatches.length} result blocks`);
 
-      const resultRegex = /<div class="result[^"]*">([\s\S]*?)<\/div>[\s\S]*?(?=<div class="result|$)/gi;
-      const matches = html.matchAll(resultRegex);
-
-      let count = 0;
-      for (const match of matches) {
-        if (count >= 10) break;
+      for (const match of blockMatches) {
+        if (results.length >= 10) break;
         const block = match[1];
 
-        const linkMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+        // Extract link with class result__a or similar
+        const linkRegex = /<a[^>]*class="[^"]*result[^"]*a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+        const linkMatch = block.match(linkRegex);
+        
         if (!linkMatch) continue;
 
         let url = linkMatch[1];
-        const urlMatch = url.match(/uddg=([^&]+)/);
-        if (urlMatch) {
-          url = decodeURIComponent(urlMatch[1]);
+        // Extract actual URL from DuckDuckGo redirect
+        const uddgMatch = url.match(/uddg=([^&]+)/);
+        if (uddgMatch) {
+          url = decodeURIComponent(uddgMatch[1]);
         }
+
+        // Skip DuckDuckGo internal links
+        if (url.includes("duckduckgo.com") || !url.startsWith("http")) continue;
 
         const title = linkMatch[2].replace(/<[^>]*>/g, "").trim();
-        if (!url || !title || url.includes("duckduckgo.com")) continue;
+        if (!title) continue;
 
-        const snippetMatch = block.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
-        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+        // Extract snippet
+        const snippetRegex = /<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/i;
+        const snippetMatch = block.match(snippetRegex);
+        const snippet = snippetMatch 
+          ? snippetMatch[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim()
+          : "";
 
-        count += 1;
-        content += `## [${count}] ${title}\n`;
-        content += `URL: ${url}\n`;
-        if (snippet) {
-          content += `${snippet}\n`;
+        results.push({ title, url, snippet });
+      }
+
+      // Strategy 2: Fallback - find all links with uddg parameter
+      if (results.length === 0) {
+        console.log("[web-search] Strategy 2: Parsing uddg links...");
+        const linkRegex = /<a[^>]*href="[^"]*uddg=([^"&]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+        const linkMatches = [...html.matchAll(linkRegex)];
+        
+        console.log(`[web-search] Strategy 2: Found ${linkMatches.length} uddg links`);
+
+        for (const match of linkMatches) {
+          if (results.length >= 10) break;
+          
+          const url = decodeURIComponent(match[1]);
+          if (url.includes("duckduckgo.com") || !url.startsWith("http")) continue;
+
+          const title = match[2].replace(/<[^>]*>/g, "").trim();
+          if (!title || title.length < 3) continue;
+
+          // Avoid duplicates
+          if (results.some(r => r.url === url)) continue;
+
+          results.push({ title, url, snippet: "" });
         }
-        content += "\n";
       }
 
-      if (count === 0) {
-        content += "No results could be parsed from DuckDuckGo.\n";
+      // Strategy 3: Super fallback - extract any external links
+      if (results.length === 0) {
+        console.log("[web-search] Strategy 3: Extracting all external links...");
+        const allLinksRegex = /<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+        const allLinks = [...html.matchAll(allLinksRegex)];
+        
+        for (const match of allLinks) {
+          if (results.length >= 10) break;
+          
+          const url = match[1];
+          if (url.includes("duckduckgo.com")) continue;
+
+          const title = match[2].replace(/<[^>]*>/g, "").trim();
+          if (!title || title.length < 3) continue;
+          if (results.some(r => r.url === url)) continue;
+
+          results.push({ title, url, snippet: "" });
+        }
       }
 
-      console.log(`[web-search] Parsed ${count} results`);
+      console.log(`[web-search] Final result count: ${results.length}`);
+      
+      if (results.length > 0) {
+        console.log("[web-search] First result:", results[0]);
+      }
 
       return new Response(
-        JSON.stringify({ content, type: "search", query }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({ results, query }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fallback simple reader for type === 'read' (no external paid API)
-    console.log("[web-search] Simple read for URL:", query);
-    const pageResponse = await fetch(query, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
+    // Read mode - fetch and extract text from URL
+    if (type === "read") {
+      console.log("[web-search] Reading URL:", query);
+      
+      const pageResponse = await fetch(query, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
 
-    if (!pageResponse.ok) {
-      const text = await pageResponse.text();
-      console.error("[web-search] Read URL error:", pageResponse.status, text.slice(0, 500));
+      if (!pageResponse.ok) {
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch URL: ${pageResponse.status}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const pageHtml = await pageResponse.text();
+      const textContent = pageHtml
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 8000);
+
       return new Response(
-        JSON.stringify({ error: `Error fetching URL: ${pageResponse.status}` }),
-        { status: pageResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({ content: textContent, type: "read", query }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const pageHtml = await pageResponse.text();
-    console.log("[web-search] Read page length:", pageHtml.length);
-
-    const textContent = pageHtml.replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    const truncated = textContent.slice(0, 8000);
 
     return new Response(
-      JSON.stringify({ content: truncated, type: "read", query }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ error: "Invalid type parameter", results: [] }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
   } catch (e) {
     console.error("[web-search] Error:", e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error", results: [] }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
