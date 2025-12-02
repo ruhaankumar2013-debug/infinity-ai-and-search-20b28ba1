@@ -312,9 +312,9 @@ const Index = () => {
           });
           
           try {
-            console.log('Searching DuckDuckGo for real-time information...');
-            const { data: searchData, error: searchError } = await supabase.functions.invoke('duckduckgo-search', {
-              body: { query: lastUserMessage.content }
+            console.log('Searching web for real-time information...');
+            const { data: searchData, error: searchError } = await supabase.functions.invoke('web-search', {
+              body: { query: lastUserMessage.content, type: 'search' }
             });
             
             if (searchError) {
