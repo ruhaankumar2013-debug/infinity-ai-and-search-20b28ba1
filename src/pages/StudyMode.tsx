@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Upload, ArrowLeft, FileText, Loader2, Brain, Calendar, GraduationCap, BookOpen } from "lucide-react";
+import { Send, Upload, ArrowLeft, FileText, Loader2, Brain, Calendar, GraduationCap, BookOpen, NotebookPen } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
@@ -12,8 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { extractTextFromFile } from "@/lib/fileTextExtractor";
 
 interface Message {
   role: "user" | "assistant";
@@ -118,6 +120,38 @@ const StudyMode = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [fileTexts, setFileTexts] = useState<Record<string, string>>({});
+  const [isExtractingFiles, setIsExtractingFiles] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  const buildStudyContextPrefix = () => {
+    let prefix = `I am a student in Grade ${selectedGrade}`;
+    if (selectedSubject) {
+      prefix += ` studying ${selectedSubject}`;
+    }
+    if (selectedChapter) {
+      prefix += `, Chapter: ${selectedChapter}`;
+    }
+    return `${prefix}. `;
+  };
+
+  const buildFilesContext = () => {
+    const entries = Object.entries(fileTexts);
+    if (entries.length === 0) return "";
+
+    let context = "\n\n[Uploaded Study Materials]\n";
+    for (const [name, text] of entries) {
+      if (!text) continue;
+      const snippet = text.slice(0, 4000);
+      context += `\n[File: ${name}]\n${snippet}\n`;
+    }
+    return context;
+  };
+
+  const buildNotesContext = () => {
+    if (!notes.trim()) return "";
+    return `\n\n[My Study Notes]\n${notes.trim()}`;
+  };
 
   // Fetch selected model details when modelId changes
   useEffect(() => {
@@ -146,18 +180,54 @@ const StudyMode = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
     setUploadedFiles(prev => [...prev, ...files]);
-    
+    setIsExtractingFiles(true);
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    const newTexts: Record<string, string> = {};
+
+    for (const file of files) {
+      try {
+        const text = await extractTextFromFile(file);
+        if (text.trim()) {
+          newTexts[file.name] = text;
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      } catch (err) {
+        console.error("File text extraction failed:", err);
+        failureCount++;
+      }
+    }
+
+    setFileTexts(prev => ({ ...prev, ...newTexts }));
+    setIsExtractingFiles(false);
+
     toast({
-      title: "Files uploaded",
-      description: `${files.length} file(s) added to your study session`,
+      title: "Files processed",
+      description: `${successCount} file(s) ready for study. ${failureCount > 0 ? `${failureCount} file(s) could not be processed for text.` : ""}`,
     });
   };
 
   const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadedFiles(prev => {
+      const updated = [...prev];
+      const [removed] = updated.splice(index, 1);
+      if (removed) {
+        setFileTexts(current => {
+          const { [removed.name]: _omit, ...rest } = current;
+          return rest;
+        });
+      }
+      return updated;
+    });
   };
 
   const handleAddExam = () => {
@@ -191,7 +261,8 @@ const StudyMode = () => {
   const handleChapterSelect = (chapter: string) => {
     setSelectedChapter(chapter);
     
-    const contextMessage = `I'm studying Grade ${selectedGrade}, ${selectedSubject}, Chapter: ${chapter}. Please help me understand this chapter.`;
+    const baseMessage = `I'm studying Grade ${selectedGrade}, ${selectedSubject}, Chapter: ${chapter}. Please help me understand this chapter.`;
+    const contextMessage = baseMessage + buildFilesContext() + buildNotesContext();
     
     setMessages(prev => [...prev, {
       role: "user",
@@ -215,12 +286,16 @@ const StudyMode = () => {
         return;
       }
 
+      const filesContext = buildFilesContext();
+      const notesContext = buildNotesContext();
+
       const { data, error } = await supabase.functions.invoke("openchat", {
         body: {
-          messages: [...messages, { role: "user", content: message }],
+          messages: [...messages, { role: "user", content: buildStudyContextPrefix() + message + filesContext + notesContext }],
           modelId: selectedModel.id,
           modelName: selectedModel.model_id,
           studyMode: true,
+          stream: false,
         },
       });
 
@@ -264,9 +339,11 @@ const StudyMode = () => {
     }
 
     setIsLoading(true);
+    const filesContext = buildFilesContext();
+    const notesContext = buildNotesContext();
     const userMessage: Message = {
       role: "user",
-      content: "Create a detailed mind map based on our discussion so far. Format it as a hierarchical structure.",
+      content: buildStudyContextPrefix() + "Create a detailed mind map based on our discussion so far. Format it as a hierarchical structure." + filesContext + notesContext,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -278,6 +355,7 @@ const StudyMode = () => {
           modelId: selectedModel.id,
           modelName: selectedModel.model_id,
           studyMode: true,
+          stream: false,
         },
       });
 
@@ -301,6 +379,58 @@ const StudyMode = () => {
     }
   };
 
+  const generateQuiz = async () => {
+    if (!selectedModel) {
+      toast({
+        title: "No model selected",
+        description: "Please select an AI model first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    const filesContext = buildFilesContext();
+    const notesContext = buildNotesContext();
+    const userMessage: Message = {
+      role: "user",
+      content: buildStudyContextPrefix() + "Create a 10-question quiz (mix of MCQs and short answers) based on what we've discussed so far. Include correct answers at the end." + filesContext + notesContext,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("openchat", {
+        body: {
+          messages: [...messages, userMessage],
+          modelId: selectedModel.id,
+          modelName: selectedModel.model_id,
+          studyMode: true,
+          stream: false,
+        },
+      });
+
+      if (error) throw error;
+
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: data.response || "Failed to generate quiz.",
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error: any) {
+      console.error("Quiz generation error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate quiz. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && uploadedFiles.length === 0) return;
@@ -308,16 +438,13 @@ const StudyMode = () => {
     setIsLoading(true);
     
     let messageContent = input.trim();
-    
-    // Add file context if files are uploaded
-    if (uploadedFiles.length > 0) {
-      const fileNames = uploadedFiles.map(f => f.name).join(", ");
-      messageContent = `${messageContent}\n\n[Uploaded files: ${fileNames}]`;
-    }
+
+    const filesContext = buildFilesContext();
+    const notesContext = buildNotesContext();
 
     const userMessage: Message = {
       role: "user",
-      content: messageContent,
+      content: buildStudyContextPrefix() + messageContent + filesContext + notesContext,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -340,6 +467,7 @@ const StudyMode = () => {
           modelId: selectedModel.id,
           modelName: selectedModel.model_id,
           studyMode: true,
+          stream: false,
         },
       });
 
@@ -361,6 +489,27 @@ const StudyMode = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const addLastAnswerToNotes = () => {
+    const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistantMessage) {
+      toast({
+        title: "No AI answer yet",
+        description: "Ask a question first, then you can save the answer into your notes.",
+      });
+      return;
+    }
+
+    setNotes((prev) => {
+      const prefix = prev.trim().length > 0 ? `${prev.trim()}\n\n` : "";
+      return `${prefix}${lastAssistantMessage.content}`;
+    });
+
+    toast({
+      title: "Note added",
+      description: "The latest AI answer was added to your notes.",
+    });
   };
 
   return (
@@ -393,15 +542,26 @@ const StudyMode = () => {
                 <Upload className="h-4 w-4 mr-2" />
                 Upload Syllabus
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={generateMindMap}
-                disabled={isLoading || messages.length === 0}
-              >
-                <Brain className="h-4 w-4 mr-2" />
-                Generate Mind Map
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={generateMindMap}
+                  disabled={isLoading || messages.length === 0}
+                >
+                  <Brain className="h-4 w-4 mr-2" />
+                  Generate Mind Map
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={generateQuiz}
+                  disabled={isLoading || messages.length === 0}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Generate Quiz
+                </Button>
+              </div>
               
               <Dialog open={examDialogOpen} onOpenChange={setExamDialogOpen}>
                 <DialogTrigger asChild>
@@ -522,7 +682,7 @@ const StudyMode = () => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.txt,.doc,.docx"
+        accept=".pdf,.txt,.doc,.docx,.md"
         className="hidden"
         onChange={handleFileUpload}
       />
@@ -557,6 +717,18 @@ const StudyMode = () => {
       {/* Uploaded Files */}
       {uploadedFiles.length > 0 && (
         <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-sm">Uploaded Files</h3>
+            </div>
+            {isExtractingFiles && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Extracting text...
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {uploadedFiles.map((file, index) => (
               <div
@@ -576,6 +748,46 @@ const StudyMode = () => {
           </div>
         </div>
       )}
+
+      {/* Notes Area */}
+      <div className="container mx-auto px-4">
+        <div className="max-w-4xl mx-auto mb-4">
+          <Card className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <NotebookPen className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold text-sm">Study Notes</h3>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={addLastAnswerToNotes}
+                  disabled={messages.every((m) => m.role !== "assistant")}
+                >
+                  Add last answer
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => setNotes("")}
+                  disabled={!notes.trim()}
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Write your own notes, summaries, formulas, or important points here... These notes will be shared with the AI when you ask questions."
+              className="min-h-[120px]"
+            />
+          </Card>
+        </div>
+      </div>
 
       {/* Chat Area */}
       <div className="flex-1 container mx-auto px-4 py-6 overflow-y-auto">

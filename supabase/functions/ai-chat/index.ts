@@ -1,150 +1,86 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-// Input validation
-const validateInput = (data: any) => {
-  const errors: string[] = [];
-
-  // Validate messages array
-  if (!Array.isArray(data.messages)) {
-    errors.push("messages must be an array");
-  } else if (data.messages.length === 0) {
-    errors.push("messages array cannot be empty");
-  } else if (data.messages.length > 100) {
-    errors.push("messages array cannot exceed 100 messages");
-  } else {
-    for (const msg of data.messages) {
-      if (!msg.role || !msg.content) {
-        errors.push("each message must have role and content");
-        break;
-      }
-      if (typeof msg.content !== 'string' || msg.content.length > 10000) {
-        errors.push("message content must be string with max 10,000 characters");
-        break;
-      }
-    }
-  }
-
-  return errors;
-};
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const requestData = await req.json();
-    
-    // Validate input
-    const validationErrors = validateInput(requestData);
-    if (validationErrors.length > 0) {
-      console.error('Validation errors:', validationErrors);
-      return new Response(
-        JSON.stringify({ error: 'Invalid input', details: validationErrors }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const { messages } = requestData;
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
-
-    console.log('Initializing Lovable AI (Gemini 2.5 Flash) request...');
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Fetch all knowledge entries from database
-    const { data: knowledgeEntries, error: dbError } = await supabase
-      .from('knowledge_entries')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (dbError) {
-      console.error('Error fetching knowledge:', dbError);
-    }
-
-    // Build knowledge base context
-    let knowledgeContext = '';
-    if (knowledgeEntries && knowledgeEntries.length > 0) {
-      knowledgeContext = '\n\nKnowledge Base:\n' + knowledgeEntries
-        .map(entry => `[${entry.title}]\n${entry.content}`)
-        .join('\n\n');
-    }
-
-    // System prompt with knowledge
-    const systemPrompt = `You are an intelligent AI assistant. When answering questions, first check if the information is available in the knowledge base below. If it is, use that information. If the answer is not in the knowledge base, use your general knowledge to provide a helpful response. Do not mention the knowledge base or that you have custom knowledge unless specifically asked about it.${knowledgeContext}`;
-
-    // Prepare messages for Lovable AI
-    const chatMessages = [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ];
-
-    console.log('Calling Lovable AI Gateway with Gemini 2.5 Flash...');
-
-    // Call Lovable AI Gateway
-    const response = await fetch(
-      'https://ai.gateway.lovable.dev/v1/chat/completions',
-      {
-        method: 'POST',
+export default {
+  async fetch(request: Request, env: any) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
         headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers": "content-type",
         },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: chatMessages,
-          stream: true,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Lovable AI error:', response.status, errorText);
-      
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Rate limits exceeded, please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'Payment required, please add funds to your Lovable AI workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      return new Response(
-        JSON.stringify({ error: `Lovable AI error: ${response.status}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      });
     }
 
-    console.log('Successfully connected to Lovable AI, streaming response...');
+    try {
+      const { messages, model } = await request.json();
 
-    // Return the stream
-    return new Response(response.body, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-    });
-  } catch (e) {
-    console.error('Chat error:', e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-});
+      if (!messages || !Array.isArray(messages)) {
+        return new Response("Invalid messages", { status: 400 });
+      }
+
+      const isGPTOSS = model?.includes("gpt-oss");
+
+      // ================================
+      // GPT-OSS-120B (NO STREAMING)
+      // ================================
+      if (isGPTOSS) {
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/run/@cf/openai/gpt-oss-120b`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.CF_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              input: messages.map((m: any) => `${m.role}: ${m.content}`).join("\n"),
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        return new Response(
+          JSON.stringify({
+            content:
+              data?.result?.response ||
+              data?.result?.output_text ||
+              "",
+          }),
+          {
+            headers: {
+              "Access-Control-Allow-Origin": "*",
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
+
+      // ================================
+      // OTHER MODELS (STREAMING)
+      // ================================
+      const response = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${env.LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            stream: true,
+          }),
+        }
+      );
+
+      return new Response(response.body, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "text/event-stream",
+        },
+      });
+    } catch (err: any) {
+      return new Response(err.message || "Error", { status: 500 });
+    }
+  },
+};

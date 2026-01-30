@@ -8,50 +8,50 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 220 15% 8%;
-    --foreground: 210 40% 98%;
+    --background: 0 0% 100%;
+    --foreground: 220 15% 15%;
 
-    --card: 220 15% 10%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 15%;
 
-    --popover: 220 15% 10%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 15%;
 
     --primary: 217 91% 60%;
-    --primary-foreground: 220 15% 8%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 265 89% 65%;
-    --secondary-foreground: 220 15% 8%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 220 15% 15%;
-    --muted-foreground: 217 10% 60%;
+    --muted: 220 15% 96%;
+    --muted-foreground: 220 10% 40%;
 
     --accent: 265 89% 65%;
-    --accent-foreground: 210 40% 98%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
     --ring: 217 91% 60%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 220 15% 10%;
-    --sidebar-foreground: 210 40% 98%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 220 15% 15%;
     --sidebar-primary: 217 91% 60%;
-    --sidebar-primary-foreground: 220 15% 8%;
-    --sidebar-accent: 220 15% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 15% 20%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 96%;
+    --sidebar-accent-foreground: 220 15% 15%;
+    --sidebar-border: 220 15% 90%;
     --sidebar-ring: 217 91% 60%;
 
     /* Custom design tokens */
     --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(265 89% 65%));
     --gradient-glow: linear-gradient(180deg, hsl(217 91% 60% / 0.1), hsl(265 89% 65% / 0.05));
-    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
-    --shadow-soft: 0 4px 20px hsl(220 15% 5% / 0.5);
+    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.2);
+    --shadow-soft: 0 4px 20px hsl(220 15% 10% / 0.1);
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
@@ -92,6 +92,12 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 220 15% 20%;
     --sidebar-ring: 217 91% 60%;
+
+    /* Custom design tokens for dark mode */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(265 89% 65%));
+    --gradient-glow: linear-gradient(180deg, hsl(217 91% 60% / 0.1), hsl(265 89% 65% / 0.05));
+    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
+    --shadow-soft: 0 4px 20px hsl(220 15% 5% / 0.5);
   }
 }
 
@@ -102,5 +108,19 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  mark {
+    @apply bg-primary/20 text-primary font-medium rounded px-0.5;
+  }
+  
+  .dark mark {
+    @apply bg-primary/30;
+  }
+
+  kbd {
+    @apply font-mono;
   }
 }

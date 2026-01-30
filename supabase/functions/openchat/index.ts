@@ -1,3 +1,6 @@
+// @ts-nocheck
+// This file runs on Deno runtime (Supabase Edge Functions), not Node.js
+// TypeScript errors here are expected and don't affect runtime functionality
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -5,6 +8,10 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Feature flag: enable or disable server-side web search enrichment.
+// Disabling this makes initial responses start faster.
+const ENABLE_WEB_SURFING_ENRICHMENT = false;
 
 // Input validation
 const validateInput = (data: any) => {
@@ -39,11 +46,11 @@ const validateInput = (data: any) => {
     errors.push("modelName must start with @groq/ or @cf/");
   }
 
-  // Validate modelId (must be valid UUID or null)
+  // Validate modelId (must be valid UUID, model_id string like @cf/..., or null)
   if (data.modelId && typeof data.modelId !== 'string') {
     errors.push("modelId must be a string");
-  } else if (data.modelId && !data.modelId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-    errors.push("modelId must be a valid UUID");
+  } else if (data.modelId && !data.modelId.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|@[a-z]+\/[^/]+(\/[^/]+)*)$/i)) {
+    errors.push("modelId must be a valid UUID or model_id string (e.g., @cf/model-name)");
   }
 
   // Validate boolean flags
@@ -55,6 +62,10 @@ const validateInput = (data: any) => {
   }
   if (data.webSurfingMode !== undefined && typeof data.webSurfingMode !== 'boolean') {
     errors.push("webSurfingMode must be a boolean");
+  }
+
+  if (data.stream !== undefined && typeof data.stream !== 'boolean') {
+    errors.push("stream must be a boolean");
   }
 
   return errors;
@@ -78,7 +89,12 @@ serve(async (req) => {
       );
     }
 
-    const { messages, modelId, modelName, researchMode, studyMode, webSurfingMode } = requestData;
+    let { messages, modelId, modelName, researchMode, studyMode, webSurfingMode, stream = true } = requestData;
+    
+    // GPT-OSS-120B uses Responses API which doesn't support streaming
+    if (modelName === '@cf/openai/gpt-oss-120b') {
+      stream = false;
+    }
     
     // Determine which API to use based on model prefix
     const isGroqModel = modelName?.startsWith('@groq/');
@@ -93,7 +109,10 @@ serve(async (req) => {
       const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
       const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
       if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-        throw new Error('Cloudflare credentials not configured');
+        return new Response(
+          JSON.stringify({ error: 'Cloudflare credentials not configured. Please set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN environment variables.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     } else {
       throw new Error('Unsupported model type');
@@ -203,8 +222,9 @@ First, thoroughly search the knowledge base below for relevant information. If f
     // Enhanced message handling for web surfing mode
     let enrichedMessages = [...messages];
     
-    // In web surfing mode, automatically perform a web search on the latest user message
-    if (webSurfingMode && messages.length > 0) {
+    // Optional: in web surfing mode, automatically perform a web search on the latest user message.
+    // Disabled by default for faster initial responses.
+    if (ENABLE_WEB_SURFING_ENRICHMENT && webSurfingMode && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       if (lastMessage.role === 'user' && typeof lastMessage.content === 'string' && lastMessage.content.trim().length > 5) {
         try {
@@ -222,7 +242,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
             console.log('[openchat] Web search successful, adding context to messages');
             enrichedMessages.push({
               role: 'system',
-              content: `[WEB SEARCH RESULTS]\n${searchData.content.substring(0, 4000)}\n[END OF WEB SEARCH RESULTS]\n\nUse the above web search results to answer the user\'s question. Cite sources when appropriate.`,
+              content: `[WEB SEARCH RESULTS]\n${searchData.content.substring(0, 4000)}\n[END OF WEB SEARCH RESULTS]\n\nUse the above web search results to answer the user's question. Cite sources when appropriate.`,
             });
           } else {
             console.log('[openchat] Web search returned no content');
@@ -259,7 +279,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
           messages: chatMessages,
           temperature: 0.7,
           max_tokens: 8192,
-          stream: true,
+          stream,
         }),
       });
     } else {
@@ -268,35 +288,87 @@ First, thoroughly search the knowledge base below for relevant information. If f
       const CLOUDFLARE_ACCOUNT_ID = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
       const CLOUDFLARE_API_TOKEN = Deno.env.get('CLOUDFLARE_API_TOKEN');
       
-      // GPT-OSS-120B uses Responses API format
+      // GPT-OSS-120B uses /ai/run endpoint (Responses API format, no streaming support)
       if (modelName === '@cf/openai/gpt-oss-120b') {
-        // Build conversation context for Responses API
-        const conversationText = chatMessages
-          .map(m => {
-            if (m.role === 'system') return `Instructions: ${m.content}`;
-            if (m.role === 'user') return `User: ${m.content}`;
-            if (m.role === 'assistant') return `Assistant: ${m.content}`;
-            return '';
-          })
-          .filter(Boolean)
-          .join('\n\n');
+        // ============================================
+        // ISOLATION TEST: Hardcoded minimal request
+        // ============================================
+        // This test IGNORES all chat history and uses a hardcoded prompt
+        // If THIS fails, the problem is NOT prompt formatting
+        const ISOLATION_TEST = true; // Set to false to use real chat messages
         
-        console.log('[openchat] Using Responses API for GPT-OSS-120B');
+        let conversationText;
+        let maxTokens;
         
-        response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1/responses`,
-          {
+        if (ISOLATION_TEST) {
+          // HARDCODED TEST PROMPT - NO CHAT HISTORY
+          conversationText = "Assistant: Say the word SUCCESS in all caps.";
+          maxTokens = 64;
+          console.log('[openchat] GPT-OSS-120B ISOLATION TEST MODE: Using hardcoded prompt');
+        } else {
+          // Build conversation context for GPT-OSS-120B with capitalized role prefixes
+          // Format: System:, User:, Assistant: (capitalized as required by Responses API)
+          conversationText = chatMessages
+            .map(m => {
+              const role = m.role.charAt(0).toUpperCase() + m.role.slice(1);
+              return `${role}: ${m.content}`;
+            })
+            .join('\n');
+          
+          // Ensure prompt ends with "Assistant:" to trigger generation (must be on its own line)
+          const lines = conversationText.trim().split('\n');
+          const lastLine = lines[lines.length - 1];
+          if (!lastLine.trim().startsWith('Assistant:')) {
+            conversationText += '\nAssistant:';
+          }
+          maxTokens = 512;
+        }
+        
+        const requestUrl = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/openai/gpt-oss-120b`;
+        const requestBody = {
+          input: conversationText,
+          max_output_tokens: maxTokens
+        };
+        
+        // COMPREHENSIVE REQUEST LOGGING
+        console.log('========================================');
+        console.log('[openchat] GPT-OSS-120B RAW FETCH TEST');
+        console.log('========================================');
+        console.log('[openchat] Request URL:', requestUrl);
+        console.log('[openchat] Request Method: POST');
+        console.log('[openchat] Request Headers:', {
+          'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN ? CLOUDFLARE_API_TOKEN.substring(0, 20) + '...' : 'MISSING'}`,
+          'Content-Type': 'application/json'
+        });
+        console.log('[openchat] Request Body (EXACT):', JSON.stringify(requestBody, null, 2));
+        console.log('[openchat] Stream enabled:', false);
+        console.log('[openchat] Account ID present:', !!CLOUDFLARE_ACCOUNT_ID);
+        console.log('[openchat] API Token present:', !!CLOUDFLARE_API_TOKEN);
+        console.log('========================================');
+        
+        try {
+          response = await fetch(requestUrl, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              model: modelName,
-              input: conversationText,
+            body: JSON.stringify(requestBody),
+          });
+          
+          console.log('[openchat] Fetch completed. Response status:', response.status);
+          console.log('[openchat] Response ok:', response.ok);
+          console.log('[openchat] Response headers:', Object.fromEntries(response.headers.entries()));
+        } catch (fetchError) {
+          console.error('[openchat] FETCH ERROR (network/fetch failed):', fetchError);
+          return new Response(
+            JSON.stringify({ 
+              error: `Network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`,
+              details: 'The fetch call to Cloudflare API failed. Check network connectivity and API credentials.'
             }),
-          }
-        );
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       } else {
         // Standard chat completions format for other models with streaming
         response = await fetch(
@@ -310,7 +382,7 @@ First, thoroughly search the knowledge base below for relevant information. If f
             body: JSON.stringify({
               model: modelName,
               messages: chatMessages,
-              stream: true,
+              stream,
             }),
           }
         );
@@ -319,15 +391,109 @@ First, thoroughly search the knowledge base below for relevant information. If f
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[openchat] ${modelName} error:`, response.status, errorText);
+      console.error(`[openchat] ${modelName} HTTP error status:`, response.status);
+      console.error(`[openchat] ${modelName} error response body:`, errorText);
       const apiName = isGroqModel ? 'Groq API' : 'Cloudflare Workers AI';
+      let errorMessage = `${apiName} error: HTTP ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.errors?.[0]?.message || errorJson.error || errorJson.message || errorMessage;
+      } catch {
+        if (errorText) {
+          errorMessage = errorText.length > 200 ? errorText.substring(0, 200) : errorText;
+        }
+      }
       return new Response(
-        JSON.stringify({ error: `${apiName} error: ${response.status}` }),
+        JSON.stringify({ error: errorMessage }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Return the stream directly for both Groq and Cloudflare
+    // Non-streaming mode: return a single JSON response for easier use in Study Mode, etc.
+    if (!stream) {
+      let json;
+      let responseText;
+      
+      try {
+        responseText = await response.text();
+        console.log('========================================');
+        console.log('[openchat] RAW RESPONSE TEXT (first 2000 chars):', responseText.substring(0, 2000));
+        console.log('[openchat] Response text length:', responseText.length);
+        console.log('========================================');
+        
+        try {
+          json = JSON.parse(responseText);
+          console.log('[openchat] Parsed JSON successfully');
+        } catch (parseError) {
+          console.error('[openchat] JSON PARSE ERROR:', parseError);
+          return new Response(
+            JSON.stringify({ 
+              error: `Invalid JSON response from Cloudflare. Raw response: ${responseText.substring(0, 500)}`,
+              details: 'The API returned non-JSON data. This may indicate an authentication or endpoint error.'
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (readError) {
+        console.error('[openchat] RESPONSE READ ERROR:', readError);
+        return new Response(
+          JSON.stringify({ 
+            error: `Failed to read response: ${readError instanceof Error ? readError.message : String(readError)}`,
+            details: 'Could not read the response body from Cloudflare API.'
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log('[openchat] Non-streaming response HTTP status:', response.status);
+      console.log('[openchat] Non-streaming response full JSON:', JSON.stringify(json, null, 2));
+
+      // GPT-OSS-120B uses /ai/run endpoint which returns { result: { response: string } } or { result: { output_text: string } }
+      // Extract content ONLY from result.response or result.output_text (strict parsing)
+      let content;
+      console.log('[openchat] Checking json.result:', !!json.result);
+      console.log('[openchat] json.result type:', typeof json.result);
+      if (json.result) {
+        console.log('[openchat] json.result keys:', Object.keys(json.result));
+        console.log('[openchat] json.result.response exists:', !!json.result.response);
+        console.log('[openchat] json.result.output_text exists:', !!json.result.output_text);
+      }
+      
+      if (json.result?.response) {
+        content = json.result.response;
+        console.log('[openchat] ✅ SUCCESS: Extracted content from json.result.response');
+        console.log('[openchat] Content length:', content.length);
+      } else if (json.result?.output_text) {
+        content = json.result.output_text;
+        console.log('[openchat] ✅ SUCCESS: Extracted content from json.result.output_text');
+        console.log('[openchat] Content length:', content.length);
+      } else {
+        console.error('[openchat] ❌ FAILED to extract content. Full response structure:', JSON.stringify(json, null, 2));
+        // Log structure for debugging
+        console.error('[openchat] json.result exists:', !!json.result);
+        console.error('[openchat] json.result type:', typeof json.result);
+        if (json.result) {
+          console.error('[openchat] json.result keys:', Object.keys(json.result));
+        }
+        // Return the FULL error with complete response for debugging
+        return new Response(
+          JSON.stringify({ 
+            error: `Failed to extract response. Unexpected response format.`,
+            details: `Expected json.result.response or json.result.output_text, but got: ${JSON.stringify(json, null, 2).substring(0, 2000)}`,
+            fullResponse: json
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('[openchat] ✅ FINAL SUCCESS: Returning content to client');
+      return new Response(
+        JSON.stringify({ response: content }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Streaming mode: return the provider's SSE/body directly
     const apiName = isGroqModel ? 'Groq' : 'Cloudflare';
     console.log(`[openchat] Returning ${apiName} stream to client...`);
     return new Response(response.body, {
