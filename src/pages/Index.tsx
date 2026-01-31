@@ -238,10 +238,7 @@ const Index = () => {
     await supabase.from("conversations").update({ title }).eq("id", conversationId);
   };
 
-  // --- generateWithAI (keeps your streaming logic — unchanged)
-  // For brevity and safety, I'm keeping your existing streaming flow exactly as you provided.
-  // If you want the optimized streaming improvements we discussed earlier integrated here,
-  // tell me and I'll inject the micro-batched streaming parser into generateWithAI.
+  // --- generateWithAI with ULTRA orchestration support
   const generateWithAI = async (messages: Message[], conversationId: string) => {
     if (!selectedModelId) {
       toast({
@@ -252,195 +249,324 @@ const Index = () => {
       throw new Error("No model selected");
     }
 
-    // Handle both database models (UUID id) and client-injected models (model_id string)
-    let modelData: any;
-    if (selectedModelId?.startsWith("@cf/") || selectedModelId?.startsWith("@hf/") || selectedModelId?.startsWith("@ollama/") || selectedModelId?.startsWith("@groq/")) {
-      // Client-injected model - construct model object from model_id
-      const { data: dbModel } = await supabase.from("models").select("*").eq("model_id", selectedModelId).single();
-      if (dbModel) {
-        modelData = dbModel;
-      } else {
-        // Fallback: construct model object for GPT-OSS-120B
-        modelData = {
-          id: selectedModelId,
-          model_id: selectedModelId,
-          name: selectedModelId.includes("gpt-oss-120b") ? "gpt-oss-120b" : selectedModelId.split("/").pop(),
-          display_name: selectedModelId.includes("gpt-oss-120b") ? "GPT-OSS-120B" : selectedModelId,
-          type: "text-generation",
-          parameters: "120B",
-        };
-      }
-    } else {
-      // Database model with UUID id
-      const { data } = await supabase.from("models").select("*").eq("id", selectedModelId).single();
-      if (!data) {
-        throw new Error("Model not found");
-      }
-      modelData = data;
-    }
-
-    if (!modelData) {
-      throw new Error("Model not found");
-    }
-
-    const { data: knowledgeData } = await supabase.from("knowledge_entries").select("*").eq("model_id", modelData.id);
-
-    let systemPrompt = "You are a helpful AI assistant.";
-    if (knowledgeData && knowledgeData.length > 0) {
-      systemPrompt += "\n\nYou have access to the following knowledge:\n\n";
-      knowledgeData.forEach((entry: any) => {
-        systemPrompt += `## ${entry.title}\n${entry.content}\n\n`;
-      });
-    }
-
     const lastUserMessage = messages[messages.length - 1];
     if (!lastUserMessage || lastUserMessage.role !== "user") {
       throw new Error("No user message found");
     }
+
     let assistantContent = "";
     let imageUrl: string | undefined = undefined;
 
-    if (modelData.type === "image-generation") {
+    // Handle ULTRA orchestrator
+    if (selectedModelId === "@ultra/orchestrator") {
       try {
-        const { data, error } = await supabase.functions.invoke("generate-image", {
-          body: { prompt: lastUserMessage.content },
-        });
-        if (error) throw error;
-        imageUrl = data.imageUrl;
-        assistantContent = "Generated image based on your prompt.";
-        setMessages((prev) => [...prev, { role: "assistant", content: assistantContent, imageUrl }]);
-      } catch (error) {
-        console.error("Image generation error:", error);
-        throw new Error(`Failed to generate image. Please try again.`);
-      }
-    }
-
-    if (modelData.model_id.startsWith("@cf/") || modelData.model_id.startsWith("@groq/")) {
-      try {
-        // GPT-OSS-120B uses Responses API which doesn't support streaming
-        const isGPTOSS = modelData.model_id === "@cf/openai/gpt-oss-120b";
+        console.log("🧠 ULTRA: Routing prompt...");
         
-        if (isGPTOSS) {
-          // Non-streaming response for GPT-OSS-120B
-          console.log("🚀 Starting non-streaming response for GPT-OSS-120B...");
+        // Step 1: Get routing decision from ULTRA
+        const { data: routingData, error: routingError } = await supabase.functions.invoke("ultra-router", {
+          body: { prompt: lastUserMessage.content, messages },
+        });
+
+        if (routingError) {
+          console.error("ULTRA routing error:", routingError);
+          throw new Error("Failed to route prompt");
+        }
+
+        const targetModel = routingData.model;
+        const modifiedPrompt = routingData.modified_prompt || lastUserMessage.content;
+        
+        console.log(`🧠 ULTRA: Routing to ${targetModel}`);
+
+        // Step 2: Execute the chosen model
+        if (targetModel === "sdxl") {
+          // Image generation
+          setMessages((prev) => [...prev, { role: "assistant", content: "🎨 Generating image..." }]);
           
-          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({
-              messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-              })),
-              modelId: selectedModelId,
-              modelName: modelData.model_id,
-              researchMode,
-              studyMode,
-              webSurfingMode,
-            }),
+          const { data: imgData, error: imgError } = await supabase.functions.invoke("generate-sdxl", {
+            body: { prompt: modifiedPrompt },
           });
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            let errorData;
-            try {
-              errorData = JSON.parse(errorText);
-            } catch {
-              errorData = { error: errorText || "Unknown error" };
-            }
-            throw new Error(errorData.error || errorData.details?.[0] || `HTTP ${response.status}: Failed to get response`);
-          }
+          if (imgError) throw imgError;
+          
+          imageUrl = imgData.imageUrl;
+          assistantContent = "Here's the image I generated based on your prompt:";
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+            return newMessages;
+          });
+        } else if (targetModel === "stable-video-diffusion") {
+          // Video generation
+          setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video preview..." }]);
+          
+          const { data: vidData, error: vidError } = await supabase.functions.invoke("generate-video", {
+            body: { prompt: modifiedPrompt },
+          });
 
-          const data = await response.json();
-          assistantContent = data.response || data.content || "No response received.";
-          setMessages((prev) => [...prev, { role: "assistant", content: assistantContent }]);
+          if (vidError) throw vidError;
+          
+          imageUrl = vidData.videoUrl;
+          assistantContent = vidData.message || "Here's your video preview:";
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+            return newMessages;
+          });
+        } else if (targetModel === "gpt-oss-120b") {
+          // High-capability reasoning via OpenRouter
+          await streamOpenRouterResponse(messages, conversationId);
+          return; // Response already handled
         } else {
-          // Streaming response for other models
-          console.log("🚀 Starting streaming response...");
-          let streamedContent = "";
-          setIsStreaming(true);
-          setMessages((prev) => [...prev, { role: "assistant", content: streamedContent }]);
-
-          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({
-              messages: messages.map(m => ({
-                role: m.role,
-                content: m.content,
-              })),
-              modelId: selectedModelId,
-              modelName: modelData.model_id,
-              researchMode,
-              studyMode,
-              webSurfingMode,
-            }),
-          });
-
-          if (!response.ok || !response.body) {
-            setIsStreaming(false);
-            throw new Error("Failed to start streaming");
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              if (!line.trim() || line.startsWith(":")) continue;
-              if (!line.startsWith("data: ")) continue;
-
-              const data = line.slice(6);
-              if (data === "[DONE]") continue;
-
-              try {
-                const parsed = JSON.parse(data);
-                const delta = parsed.choices?.[0]?.delta?.content;
-                if (delta) {
-                  streamedContent += delta;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    newMessages[newMessages.length - 1] = { role: "assistant", content: streamedContent };
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                // Skip invalid JSON
-              }
-            }
-          }
-
-          setIsStreaming(false);
-          assistantContent = streamedContent;
+          // Fast text model - use existing Cloudflare flow
+          await streamCloudflareResponse(messages, conversationId);
+          return; // Response already handled
         }
       } catch (error) {
-        console.error("AI error:", error);
-        setIsStreaming(false);
-        throw new Error(`Failed to generate response with ${modelData.display_name}. Please try again.`);
+        console.error("ULTRA error:", error);
+        throw new Error(`ULTRA orchestration failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-    } else {
-      throw new Error("Unsupported model type");
+    }
+    // Handle GPT-OSS-120B directly
+    else if (selectedModelId === "@openrouter/gpt-oss-120b") {
+      await streamOpenRouterResponse(messages, conversationId);
+      return;
+    }
+    // Handle SDXL directly
+    else if (selectedModelId === "@cf/stabilityai/sdxl") {
+      try {
+        setMessages((prev) => [...prev, { role: "assistant", content: "🎨 Generating image with SDXL..." }]);
+        
+        const { data: imgData, error: imgError } = await supabase.functions.invoke("generate-sdxl", {
+          body: { prompt: lastUserMessage.content },
+        });
+
+        if (imgError) throw imgError;
+        
+        imageUrl = imgData.imageUrl;
+        assistantContent = "Here's your SDXL generated image:";
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+          return newMessages;
+        });
+      } catch (error) {
+        throw new Error(`SDXL generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+    // Handle Stable Video Diffusion directly
+    else if (selectedModelId === "@stability/svd") {
+      try {
+        setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video..." }]);
+        
+        const { data: vidData, error: vidError } = await supabase.functions.invoke("generate-video", {
+          body: { prompt: lastUserMessage.content },
+        });
+
+        if (vidError) throw vidError;
+        
+        imageUrl = vidData.videoUrl;
+        assistantContent = vidData.message || "Here's your video preview:";
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+          return newMessages;
+        });
+      } catch (error) {
+        throw new Error(`Video generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+    // Handle existing Cloudflare/Groq models
+    else {
+      await streamCloudflareResponse(messages, conversationId);
+      return;
     }
 
+    // Save the response
     if (assistantContent) {
-      const insertData: any = { conversation_id: conversationId, role: "assistant", content: assistantContent };
+      const insertData: any = { 
+        conversation_id: conversationId, 
+        role: "assistant", 
+        content: assistantContent,
+        user_id: user!.id 
+      };
       if (imageUrl) insertData.image_url = imageUrl;
       await supabase.from("messages").insert(insertData);
+    }
+  };
+
+  // Stream response from OpenRouter (GPT-OSS-120B)
+  const streamOpenRouterResponse = async (messages: Message[], conversationId: string) => {
+    let streamedContent = "";
+    setIsStreaming(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          model: "gpt-oss-120b",
+          stream: true,
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        setIsStreaming(false);
+        throw new Error("Failed to start streaming");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim() || line.startsWith(":")) continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              streamedContent += delta;
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { role: "assistant", content: streamedContent };
+                return newMessages;
+              });
+            }
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      setIsStreaming(false);
+
+      // Save to database
+      await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        role: "assistant",
+        content: streamedContent,
+        user_id: user!.id,
+      });
+    } catch (error) {
+      setIsStreaming(false);
+      throw error;
+    }
+  };
+
+  // Stream response from Cloudflare (existing models)
+  const streamCloudflareResponse = async (messages: Message[], conversationId: string) => {
+    // Get model data
+    let modelData: any;
+    if (selectedModelId?.startsWith("@cf/") || selectedModelId?.startsWith("@hf/") || selectedModelId?.startsWith("@ollama/") || selectedModelId?.startsWith("@groq/")) {
+      const { data: dbModel } = await supabase.from("models").select("*").eq("model_id", selectedModelId).single();
+      if (dbModel) {
+        modelData = dbModel;
+      } else {
+        modelData = {
+          id: selectedModelId,
+          model_id: selectedModelId,
+          name: selectedModelId.split("/").pop(),
+          display_name: selectedModelId,
+          type: "text-generation",
+        };
+      }
+    } else {
+      const { data } = await supabase.from("models").select("*").eq("id", selectedModelId).single();
+      if (!data) throw new Error("Model not found");
+      modelData = data;
+    }
+
+    let streamedContent = "";
+    setIsStreaming(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openchat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          modelId: selectedModelId,
+          modelName: modelData.model_id,
+          researchMode,
+          studyMode,
+          webSurfingMode,
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        setIsStreaming(false);
+        throw new Error("Failed to start streaming");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim() || line.startsWith(":")) continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              streamedContent += delta;
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { role: "assistant", content: streamedContent };
+                return newMessages;
+              });
+            }
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      setIsStreaming(false);
+
+      // Save to database
+      await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        role: "assistant",
+        content: streamedContent,
+        user_id: user!.id,
+      });
+    } catch (error) {
+      setIsStreaming(false);
+      throw error;
     }
   };
 
