@@ -107,9 +107,17 @@ serve(async (req) => {
       throw new Error(`SDXL generation failed: ${response.status}`);
     }
 
-    // SDXL returns raw image bytes
-    const imageBuffer = await response.arrayBuffer();
-    const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+    // SDXL returns raw image bytes - encode properly for large buffers
+    const imageBytes = new Uint8Array(await response.arrayBuffer());
+    
+    // Use chunked base64 encoding to avoid stack overflow
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < imageBytes.length; i += chunkSize) {
+      const chunk = imageBytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Image = btoa(binary);
     const imageUrl = `data:image/png;base64,${base64Image}`;
 
     console.log("[generate-sdxl] Image generated successfully");
