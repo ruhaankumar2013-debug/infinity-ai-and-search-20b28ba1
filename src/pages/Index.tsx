@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Code2, MessageSquare, Loader2, Menu, LogOut, Search, User } from "lucide-react";
+import { Send, Code2, MessageSquare, Loader2, Menu, LogOut, Search } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
@@ -13,7 +13,7 @@ import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
 import { SearchTab } from "@/components/SearchTab";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import type { User as SupabaseUser, Session } from "@supabase/supabase-js";
+import type { User, Session } from "@supabase/supabase-js";
 import { z } from "zod";
 
 interface Message {
@@ -45,24 +45,25 @@ const messageSchema = z.object({
 });
 
 const Index = () => {
-  // --- Core state
+  // --- Core state (keeps most of your original state)
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  // default to home now
   const [viewMode, setViewMode] = useState<"home" | "chat" | "admin" | "search">("home");
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [researchMode, setResearchMode] = useState(false);
   const [studyMode, setStudyMode] = useState(false);
   const [webSurfingMode, setWebSurfingMode] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
 
+  // small helper to pass a home search query to SearchTab if needed
   const [homeQuery, setHomeQuery] = useState<string>("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -78,30 +79,34 @@ const Index = () => {
     scrollToBottom();
   }, [messages, isStreaming]);
 
-  // --- Auth handling (NO redirect - browsing allowed without login)
+  // --- Auth handling (keeps your original logic)
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setAuthChecked(true);
-      if (session?.user) {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        // Check admin status
         setTimeout(() => {
           checkAdminStatus(session.user.id);
         }, 0);
       }
     });
 
+    // Check existing session immediately
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setUser(data.session?.user ?? null);
-      setAuthChecked(true);
-      if (data.session?.user) {
+      if (!data.session) {
+        navigate("/auth");
+      } else {
         checkAdminStatus(data.session.user.id);
       }
     });
 
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (user) {
@@ -133,10 +138,7 @@ const Index = () => {
         variant: "destructive",
       });
     } else {
-      setViewMode("home");
-      setMessages([]);
-      setCurrentConversationId(null);
-      setConversations([]);
+      navigate("/auth");
     }
   };
 
@@ -260,6 +262,7 @@ const Index = () => {
       try {
         console.log("🧠 ULTRA: Routing prompt...");
         
+        // Step 1: Get routing decision from ULTRA
         const { data: routingData, error: routingError } = await supabase.functions.invoke("ultra-router", {
           body: { prompt: lastUserMessage.content, messages },
         });
@@ -274,7 +277,9 @@ const Index = () => {
         
         console.log(`🧠 ULTRA: Routing to ${targetModel}`);
 
+        // Step 2: Execute the chosen model
         if (targetModel === "sdxl") {
+          // Image generation
           setMessages((prev) => [...prev, { role: "assistant", content: "🎨 Generating image..." }]);
           
           const { data: imgData, error: imgError } = await supabase.functions.invoke("generate-sdxl", {
@@ -291,6 +296,7 @@ const Index = () => {
             return newMessages;
           });
         } else if (targetModel === "stable-video-diffusion") {
+          // Video generation
           setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video preview..." }]);
           
           const { data: vidData, error: vidError } = await supabase.functions.invoke("generate-video", {
@@ -307,21 +313,25 @@ const Index = () => {
             return newMessages;
           });
         } else if (targetModel === "gpt-oss-120b") {
+          // High-capability reasoning via OpenRouter
           await streamOpenRouterResponse(messages, conversationId);
-          return;
+          return; // Response already handled
         } else {
+          // Fast text model - use existing Cloudflare flow
           await streamCloudflareResponse(messages, conversationId);
-          return;
+          return; // Response already handled
         }
       } catch (error) {
         console.error("ULTRA error:", error);
         throw new Error(`ULTRA orchestration failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
+    // Handle GPT-OSS-120B directly
     else if (selectedModelId === "@openrouter/gpt-oss-120b") {
       await streamOpenRouterResponse(messages, conversationId);
       return;
     }
+    // Handle SDXL directly
     else if (selectedModelId === "@cf/stabilityai/sdxl") {
       try {
         setMessages((prev) => [...prev, { role: "assistant", content: "🎨 Generating image with SDXL..." }]);
@@ -343,6 +353,7 @@ const Index = () => {
         throw new Error(`SDXL generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
+    // Handle Stable Video Diffusion directly
     else if (selectedModelId === "@stability/svd") {
       try {
         setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video..." }]);
@@ -364,11 +375,13 @@ const Index = () => {
         throw new Error(`Video generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
+    // Handle existing Cloudflare/Groq models
     else {
       await streamCloudflareResponse(messages, conversationId);
       return;
     }
 
+    // Save the response
     if (assistantContent) {
       const insertData: any = { 
         conversation_id: conversationId, 
@@ -381,6 +394,7 @@ const Index = () => {
     }
   };
 
+  // Stream response from OpenRouter (GPT-OSS-120B)
   const streamOpenRouterResponse = async (messages: Message[], conversationId: string) => {
     let streamedContent = "";
     setIsStreaming(true);
@@ -443,6 +457,7 @@ const Index = () => {
 
       setIsStreaming(false);
 
+      // Save to database
       await supabase.from("messages").insert({
         conversation_id: conversationId,
         role: "assistant",
@@ -455,7 +470,9 @@ const Index = () => {
     }
   };
 
+  // Stream response from Cloudflare (existing models)
   const streamCloudflareResponse = async (messages: Message[], conversationId: string) => {
+    // Get model data
     let modelData: any;
     if (selectedModelId?.startsWith("@cf/") || selectedModelId?.startsWith("@hf/") || selectedModelId?.startsWith("@ollama/") || selectedModelId?.startsWith("@groq/")) {
       const { data: dbModel } = await supabase.from("models").select("*").eq("model_id", selectedModelId).single();
@@ -540,6 +557,7 @@ const Index = () => {
 
       setIsStreaming(false);
 
+      // Save to database
       await supabase.from("messages").insert({
         conversation_id: conversationId,
         role: "assistant",
@@ -565,22 +583,26 @@ const Index = () => {
       return;
     }
 
-    let conversationId = currentConversationId;
-    if (!conversationId) {
-      const { data, error } = await supabase
-        .from("conversations")
-        .insert({ title: "New Conversation", user_id: user.id })
-        .select()
-        .single();
-      if (error || !data) {
-        toast({ title: "Error", description: "Failed to create conversation", variant: "destructive" });
-        return;
-      }
-      conversationId = data.id;
-      setCurrentConversationId(conversationId);
-      fetchConversations();
-      setViewMode("chat");
-    }
+    // Create new conversation if none exists
+let conversationId = currentConversationId;
+if (!conversationId) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .insert({ title: "New Conversation", user_id: user.id })
+    .select()
+    .single();
+  if (error || !data) {
+    toast({ title: "Error", description: "Failed to create conversation", variant: "destructive" });
+    return;
+  }
+  conversationId = data.id;
+  setCurrentConversationId(conversationId);
+  fetchConversations();
+
+  // Switch to chat mode immediately
+  setViewMode("chat");
+}
+
 
     const userMessage: Message = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMessage];
@@ -614,242 +636,36 @@ const Index = () => {
     }
   };
 
+  // --- Home helpers
   const onHomeSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!homeQuery.trim()) return;
+    // set whatever search state you need — for now switch to Search tab
     setViewMode("search");
+    // If SearchTab consumes the query prop, you can set a global / context; here we keep simple
+    // (If SearchTab expects a prop, we can pass homeQuery to it in the JSX below)
   };
 
   const enterChatMode = () => {
-    if (!user) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to start chatting",
-      });
-      navigate("/auth");
-      return;
-    }
     setViewMode("chat");
+    // If no conversation exists, create one
     if (!currentConversationId) createNewConversation();
   };
 
-  // Show loading while checking auth
-  if (!authChecked) {
+  // --- Render
+  if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white via-slate-50 to-slate-100">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
   }
 
-  // HOME PAGE - Premium, minimal design
-  if (viewMode === "home") {
-    return (
-      <div 
-        className="min-h-screen w-full"
-        style={{
-          background: "linear-gradient(180deg, #ffffff 0%, #fafbff 30%, #f0f4ff 60%, #e8eeff 100%)",
-        }}
-      >
-        {/* Subtle gradient overlay */}
-        <div 
-          className="fixed inset-0 pointer-events-none"
-          style={{
-            background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.08), transparent), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(96, 165, 250, 0.06), transparent)",
-          }}
-        />
-
-        {/* Header */}
-        <header className="relative z-10 px-6 py-4 flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
-              <span className="text-white text-xl font-bold">∞</span>
-            </div>
-            <span className="text-xl font-semibold text-foreground">Infinity AI</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground hidden sm:block">{user.email}</span>
-                <Button variant="outline" size="sm" onClick={handleLogout}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign out
-                </Button>
-              </div>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => navigate("/auth")}>
-                <User className="w-4 h-4 mr-2" />
-                Sign in
-              </Button>
-            )}
-          </div>
-        </header>
-
-        {/* Hero Section */}
-        <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-16 pb-24 min-h-[calc(100vh-80px)]">
-          {/* Infinity Symbol */}
-          <div 
-            className="mb-8 p-8 rounded-3xl"
-            style={{
-              background: "linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))",
-              boxShadow: "0 20px 60px rgba(139, 92, 246, 0.12), 0 8px 24px rgba(96, 165, 250, 0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
-              backdropFilter: "blur(20px)",
-            }}
-          >
-            <svg 
-              width="120" 
-              height="60" 
-              viewBox="0 0 120 60" 
-              fill="none" 
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient id="infinityGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#8B5CF6" />
-                  <stop offset="50%" stopColor="#6366F1" />
-                  <stop offset="100%" stopColor="#60A5FA" />
-                </linearGradient>
-              </defs>
-              <path 
-                d="M30 30C30 16 42 10 54 22C66 34 78 28 90 30C102 32 102 40 90 38C78 36 66 42 54 30C42 18 30 24 30 30Z" 
-                stroke="url(#infinityGradient)" 
-                strokeWidth="6" 
-                strokeLinecap="round"
-                fill="none"
-              />
-              <path 
-                d="M90 30C90 44 78 50 66 38C54 26 42 32 30 30C18 28 18 20 30 22C42 24 54 18 66 30C78 42 90 36 90 30Z" 
-                stroke="url(#infinityGradient)" 
-                strokeWidth="6" 
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
-          </div>
-
-          {/* Headline */}
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-center text-foreground mb-4 tracking-tight">
-            Infinite Intelligence
-          </h1>
-          <h2 className="text-xl md:text-2xl text-muted-foreground text-center mb-8 font-light">
-            Fast. Powerful. Simple.
-          </h2>
-
-          {/* Description */}
-          <p className="text-center text-muted-foreground max-w-2xl mb-12 text-lg leading-relaxed">
-            Search the web instantly or have a conversation with ultra-powerful AI. 
-            Get answers, explore ideas, and discover more — all in one place.
-          </p>
-
-          {/* Search Bar */}
-          <form 
-            onSubmit={onHomeSearchSubmit} 
-            className="w-full max-w-2xl mb-8"
-          >
-            <div 
-              className="flex items-center gap-3 p-2 rounded-2xl"
-              style={{
-                background: "linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.8))",
-                boxShadow: "0 4px 24px rgba(139, 92, 246, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255,255,255,0.9)",
-                border: "1px solid rgba(139, 92, 246, 0.1)",
-              }}
-            >
-              <Search className="w-5 h-5 text-muted-foreground ml-4" />
-              <Input
-                placeholder="Search the web or ask anything..."
-                value={homeQuery}
-                onChange={(e) => setHomeQuery(e.target.value)}
-                className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base placeholder:text-muted-foreground/60"
-              />
-              <Button type="submit" size="lg" className="rounded-xl px-6">
-                Search
-              </Button>
-            </div>
-          </form>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 mb-12">
-            <Button 
-              size="lg" 
-              onClick={enterChatMode}
-              className="rounded-xl px-8 py-6 text-base shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all"
-            >
-              <MessageSquare className="w-5 h-5 mr-2" />
-              {user ? "Start Chat" : "Sign in to Chat"}
-            </Button>
-
-            <Button 
-              size="lg" 
-              variant="ghost" 
-              onClick={() => setViewMode("search")}
-              className="rounded-xl px-8 py-6 text-base"
-            >
-              <Search className="w-5 h-5 mr-2" />
-              Continue without login
-            </Button>
-          </div>
-
-          {/* Features */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl w-full mt-8">
-            {[
-              {
-                title: "Intelligent Search",
-                description: "Find answers instantly with AI-powered web search",
-                icon: Search,
-              },
-              {
-                title: "Smart Conversations",
-                description: "Chat naturally and get helpful, accurate responses",
-                icon: MessageSquare,
-              },
-              {
-                title: "Ultra-Fast",
-                description: "Optimized for speed without compromising quality",
-                icon: Code2,
-              },
-            ].map((feature, idx) => (
-              <div 
-                key={idx}
-                className="p-6 rounded-2xl text-center"
-                style={{
-                  background: "linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.4))",
-                  boxShadow: "0 4px 20px rgba(139, 92, 246, 0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
-                  backdropFilter: "blur(10px)",
-                }}
-              >
-                <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-gradient-to-br from-primary/10 to-secondary/10 flex items-center justify-center">
-                  <feature.icon className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="font-semibold text-foreground mb-2">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Login prompt for chat */}
-          {!user && (
-            <p className="mt-12 text-sm text-muted-foreground">
-              <button 
-                onClick={() => navigate("/auth")} 
-                className="text-primary hover:underline font-medium"
-              >
-                Sign in
-              </button>
-              {" "}to save conversations and access all features
-            </p>
-          )}
-        </main>
-      </div>
-    );
-  }
-
-  // App views (Chat, Search, Admin) - require sidebar
   return (
     <SidebarProvider>
       <div
         className="min-h-screen w-full"
+        // soft white + purple-blue subtle gradient background
         style={{
           background:
             "radial-gradient(1200px 600px at 10% 10%, rgba(99,102,241,0.06), transparent 10%), radial-gradient(900px 450px at 90% 90%, rgba(139,92,246,0.04), transparent 10%), linear-gradient(180deg,#ffffff 0%, #f8fafc 40%, #eef2ff 100%)",
@@ -859,71 +675,142 @@ const Index = () => {
         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-30">
           <div className="container mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {viewMode === "chat" && (
-                <SidebarTrigger>
-                  <Menu className="h-5 w-5" />
-                </SidebarTrigger>
-              )}
-              <button 
-                onClick={() => setViewMode("home")}
-                className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-              >
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                  <span className="text-background text-lg font-bold">∞</span>
-                </div>
-                <div>
-                  <h1 className="text-lg font-semibold text-foreground">Infinity AI</h1>
-                  <p className="text-xs text-muted-foreground">Search & Chat</p>
-                </div>
-              </button>
+              <SidebarTrigger>
+                <Menu className="h-5 w-5" />
+              </SidebarTrigger>
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                <Code2 className="w-6 h-6 text-background" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">Infinity AI</h1>
+                <p className="text-xs text-muted-foreground">Apache 2.0 Models · Cloudflare AI</p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button 
-                variant={viewMode === "chat" ? "default" : "ghost"} 
-                size="sm" 
-                onClick={enterChatMode}
-              >
+              <Button variant={viewMode === "chat" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("chat")}>
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Chat
               </Button>
-              <Button 
-                variant={viewMode === "search" ? "default" : "ghost"} 
-                size="sm" 
-                onClick={() => setViewMode("search")}
-              >
+              <Button variant={viewMode === "search" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("search")}>
                 <Search className="w-4 h-4 mr-2" />
                 Search
               </Button>
               {isAdmin && (
-                <Button 
-                  variant={viewMode === "admin" ? "default" : "ghost"} 
-                  size="sm" 
-                  onClick={() => setViewMode("admin")}
-                >
+                <Button variant={viewMode === "admin" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("admin")}>
                   <Code2 className="w-4 h-4 mr-2" />
                   Admin
                 </Button>
               )}
               <ThemeToggle />
-              {user ? (
-                <Button variant="outline" onClick={handleLogout} size="sm">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign out
-                </Button>
-              ) : (
-                <Button variant="outline" onClick={() => navigate("/auth")} size="sm">
-                  <User className="w-4 h-4 mr-2" />
-                  Sign in
-                </Button>
-              )}
+              <Button variant="outline" onClick={handleLogout} size="sm">
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
+              </Button>
             </div>
           </div>
         </header>
 
         <div className="container mx-auto px-4 py-8 max-w-6xl">
-          {viewMode === "chat" ? (
-            user ? (
+          {/* HOME HERO */}
+          {viewMode === "home" ? (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-6">
+              {/* Soft Glass Infinity Symbol */}
+              <div
+                aria-hidden
+                className="rounded-full p-6"
+                style={{
+                  // subtle glass card
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.35))",
+                  boxShadow: "0 8px 30px rgba(99,102,241,0.08), inset 0 1px 0 rgba(255,255,255,0.6)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                {/* SVG infinity symbol with glassy gradient + soft glow */}
+                <svg width="140" height="80" viewBox="0 0 140 80" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Infinity logo">
+                  <defs>
+                    <linearGradient id="g1" x1="0" x2="1" y1="0" y2="1">
+                      <stop offset="0%" stopColor="#8B5CF6" stopOpacity="1" />
+                      <stop offset="50%" stopColor="#6366F1" stopOpacity="1" />
+                      <stop offset="100%" stopColor="#60A5FA" stopOpacity="1" />
+                    </linearGradient>
+                    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+                      <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                    <linearGradient id="glass" x1="0" x2="1">
+                      <stop offset="0%" stopColor="rgba(255,255,255,0.8)" />
+                      <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Glow behind */}
+                  <path d="M12 40 C12 20, 48 12, 70 28 C92 44, 128 36, 128 16" stroke="url(#g1)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" opacity="0.12" filter="url(#glow)" transform="translate(0,6) rotate(-8 70 40)" />
+
+                  {/* Left loop */}
+                  <path d="M20 40 C20 18, 56 14, 70 28 C84 42, 48 54, 22 50 C10 48, 12 40, 20 40 Z" fill="none" stroke="url(#g1)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Right loop */}
+                  <path d="M120 40 C120 62, 84 66, 70 52 C56 38, 92 26, 118 30 C130 32, 128 40, 120 40 Z" fill="none" stroke="url(#g1)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Gloss highlight */}
+                  <path d="M32 26 C52 10, 88 10, 106 26" stroke="url(#glass)" strokeWidth="6" strokeLinecap="round" opacity="0.7" />
+
+                </svg>
+              </div>
+
+              <div>
+                <h2 className="text-3xl md:text-4xl font-extrabold text-foreground">Welcome to Infinity AI</h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto mt-2">
+                  A clean place to search, chat, and explore models — powered by Cloudflare AI and curated models.
+                </p>
+              </div>
+
+              {/* Search bar */}
+              <form onSubmit={onHomeSearchSubmit} className="w-full max-w-2xl flex items-center gap-3">
+                <Input
+                  placeholder="Search the web or ask AI — try “explain quantum entanglement in 2 sentences”"
+                  value={homeQuery}
+                  onChange={(e) => setHomeQuery(e.target.value)}
+                  className="flex-1 ring-2 ring-transparent focus:ring-primary/40"
+                />
+                <Button type="submit" size="lg" className="px-6">
+                  <Search className="w-4 h-4 mr-2" />
+                  Search
+                </Button>
+              </form>
+
+              {/* Primary actions */}
+              <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                <Button size="lg" onClick={enterChatMode} className="px-8">
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Start Chat
+                </Button>
+
+                <Button size="lg" variant="ghost" onClick={() => setViewMode("search")} className="px-6">
+                  <Search className="w-4 h-4 mr-2" />
+                  Go to Search
+                </Button>
+
+                {isAdmin && (
+                  <Button size="lg" variant="outline" onClick={() => setViewMode("admin")}>
+                    <Code2 className="w-4 h-4 mr-2" />
+                    Admin
+                  </Button>
+                )}
+              </div>
+
+              {/* subtle footnote */}
+              <div className="mt-4 text-xs text-muted-foreground">Tip: pick Chat for conversational help, Search for quick answers.</div>
+            </div>
+          ) : null}
+
+          {/* Main area: Chat / Search / Admin */}
+          <div className="mt-8">
+            {viewMode === "chat" ? (
               <div className="flex gap-6">
                 <ConversationSidebar
                   conversations={conversations}
@@ -997,30 +884,18 @@ const Index = () => {
                   </Card>
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                  <MessageSquare className="w-10 h-10 text-background" />
-                </div>
-                <h2 className="text-2xl font-semibold text-foreground mb-2">Sign in required</h2>
-                <p className="text-muted-foreground mb-6 max-w-md">
-                  Please sign in to start chatting, save conversations, and access all features.
-                </p>
-                <Button onClick={() => navigate("/auth")} size="lg" className="px-8">
-                  <User className="w-4 h-4 mr-2" />
-                  Sign in to Chat
-                </Button>
+            ) : viewMode === "search" ? (
+              <div className="h-[calc(100vh-12rem)] overflow-y-auto">
+                {/* If your SearchTab can accept query prop, pass homeQuery. */}
+                {/* <SearchTab query={homeQuery} /> */}
+                <SearchTab />
               </div>
-            )
-          ) : viewMode === "search" ? (
-            <div className="h-[calc(100vh-12rem)] overflow-y-auto">
-              <SearchTab />
-            </div>
-          ) : (
-            <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
-              <AdminPanel knowledgeEntries={knowledgeEntries} onRefresh={fetchKnowledge} />
-            </Card>
-          )}
+            ) : (
+              <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
+                <AdminPanel knowledgeEntries={knowledgeEntries} onRefresh={fetchKnowledge} />
+              </Card>
+            )}
+          </div>
         </div>
       </div>
     </SidebarProvider>
