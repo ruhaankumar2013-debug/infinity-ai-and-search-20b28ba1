@@ -51,7 +51,7 @@ serve(async (req) => {
         messages,
         stream,
         temperature: 0.7,
-        max_tokens: 4096,
+        max_tokens: 2048, // Reduced to work with limited credits
       }),
     });
 
