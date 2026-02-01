@@ -5,13 +5,74 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function generateSDXLFrame(
+  accountId: string, 
+  apiToken: string, 
+  prompt: string,
+  frameNumber: number,
+  totalFrames: number
+): Promise<string | null> {
+  try {
+    // Add motion/progression hints to each frame
+    const motionHints = [
+      "initial position, beginning of motion",
+      "slight movement, early progression", 
+      "mid-motion, dynamic movement",
+      "continued motion, building momentum",
+      "peak action, climactic moment",
+      "follow-through, completing motion"
+    ];
+    
+    const hint = motionHints[Math.min(frameNumber, motionHints.length - 1)];
+    const enhancedPrompt = `${prompt}, ${hint}, frame ${frameNumber + 1} of ${totalFrames}, cinematic quality, smooth motion, consistent lighting and style, 8k resolution, photorealistic`;
+
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: enhancedPrompt,
+          num_steps: 30,
+          guidance: 8.5,
+          seed: 42 + frameNumber * 1000, // Consistent seed progression for smooth animation
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status);
+      return null;
+    }
+
+    // SDXL returns raw image bytes
+    const imageBytes = new Uint8Array(await response.arrayBuffer());
+    
+    // Encode to base64 in chunks to avoid stack overflow
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < imageBytes.length; i += chunkSize) {
+      const chunk = imageBytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    
+    return `data:image/png;base64,${btoa(binary)}`;
+  } catch (error) {
+    console.error(`[generate-video] Frame ${frameNumber + 1} generation failed:`, error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { prompt } = await req.json();
+    const { prompt, frameCount = 6 } = await req.json();
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return new Response(
@@ -20,118 +81,42 @@ serve(async (req) => {
       );
     }
 
-    console.log("[generate-video] Generating video for prompt:", prompt.substring(0, 100));
+    console.log("[generate-video] Generating animated sequence for:", prompt.substring(0, 100));
 
-    // Use Lovable AI Gateway for video generation (no external API key needed)
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const CLOUDFLARE_ACCOUNT_ID = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
+    const CLOUDFLARE_API_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
+
+    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
+      throw new Error("Cloudflare credentials not configured");
     }
 
-    // First, generate a high-quality cinematic frame using image generation
-    console.log("[generate-video] Generating cinematic frame...");
-    
-    const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
-        messages: [
-          {
-            role: "user",
-            content: `Create a cinematic, high-quality, dynamic still frame for this video concept: ${prompt}. Make it visually striking with dramatic lighting, compelling composition, and movement-suggesting elements as if frozen mid-action.`
-          }
-        ],
-        modalities: ["image", "text"]
-      })
-    });
+    const numFrames = Math.min(Math.max(frameCount, 3), 8); // Between 3-8 frames
+    console.log(`[generate-video] Generating ${numFrames} SDXL frames...`);
 
-    if (!imageResponse.ok) {
-      const errorText = await imageResponse.text();
-      console.error("[generate-video] Image generation error:", imageResponse.status, errorText);
-      
-      if (imageResponse.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      if (imageResponse.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      throw new Error(`Image generation failed: ${imageResponse.status}`);
+    // Generate frames in parallel for speed
+    const framePromises = Array.from({ length: numFrames }, (_, i) =>
+      generateSDXLFrame(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, prompt, i, numFrames)
+    );
+
+    const frameResults = await Promise.all(framePromises);
+    const frames = frameResults.filter((frame): frame is string => frame !== null);
+
+    if (frames.length === 0) {
+      throw new Error("Failed to generate any frames");
     }
 
-    const imageData = await imageResponse.json();
-    const imageUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    console.log(`[generate-video] Successfully generated ${frames.length}/${numFrames} frames`);
 
-    if (!imageUrl) {
-      throw new Error("No image generated");
-    }
-
-    console.log("[generate-video] Frame generated, creating animated video sequence...");
-
-    // For video, we generate multiple frames to simulate animation
-    // This creates a GIF-like experience with the available tools
-    const frames = [imageUrl];
-    
-    // Generate 2 additional variation frames for animation effect
-    const variationPromises = [1, 2].map(async (i) => {
-      try {
-        const varResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image",
-            messages: [
-              {
-                role: "user",
-                content: `Create frame ${i + 1} of an animation sequence for: ${prompt}. Show subtle motion and progression from the previous frame. Maintain consistent style, lighting, and subject but with slight movement or camera shift.`
-              }
-            ],
-            modalities: ["image", "text"]
-          })
-        });
-        
-        if (varResponse.ok) {
-          const varData = await varResponse.json();
-          const varUrl = varData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-          if (varUrl) return varUrl;
-        }
-        return null;
-      } catch (e) {
-        console.error(`[generate-video] Frame ${i + 1} generation failed:`, e);
-        return null;
-      }
-    });
-
-    const additionalFrames = await Promise.all(variationPromises);
-    additionalFrames.forEach(frame => {
-      if (frame) frames.push(frame);
-    });
-
-    console.log(`[generate-video] Generated ${frames.length} frames for animation`);
-
-    // Return the frames as a video-like response
-    // The frontend can display these as an animated sequence
     return new Response(
       JSON.stringify({ 
-        videoUrl: frames[0], // Primary frame
-        frames: frames, // All frames for animation
-        type: "animated-frames",
+        videoUrl: frames[0], // Primary frame for thumbnail
+        frames: frames,
+        type: "animated-sequence",
         frameCount: frames.length,
-        model: "gemini-2.5-flash-image",
-        message: `Generated ${frames.length}-frame animation sequence`
+        fps: 4, // Suggested playback speed
+        duration: frames.length / 4, // Duration in seconds
+        model: "sdxl",
+        quality: "high"
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

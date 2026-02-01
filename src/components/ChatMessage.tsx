@@ -1,14 +1,85 @@
 import { cn } from "@/lib/utils";
-import { Bot, User, Loader2 } from "lucide-react";
+import { Bot, User, Loader2, Play, Pause } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   imageUrl?: string;
+  frames?: string[];
   isStreaming?: boolean;
 }
 
-export const ChatMessage = ({ role, content, imageUrl, isStreaming = false }: ChatMessageProps) => {
+const AnimatedFramePlayer = ({ frames, fps = 4 }: { frames: string[]; fps?: number }) => {
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isPlaying && frames.length > 1) {
+      intervalRef.current = setInterval(() => {
+        setCurrentFrame((prev) => (prev + 1) % frames.length);
+      }, 1000 / fps);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isPlaying, frames.length, fps]);
+
+  const togglePlayback = () => setIsPlaying(!isPlaying);
+
+  return (
+    <div className="relative group">
+      <img
+        src={frames[currentFrame]}
+        alt={`Animation frame ${currentFrame + 1}`}
+        className="rounded-lg max-w-full h-auto shadow-lg"
+      />
+      {frames.length > 1 && (
+        <>
+          {/* Playback controls overlay */}
+          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-black/60 rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={togglePlayback}
+              className="text-white hover:text-primary transition-colors"
+            >
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+            </button>
+            <div className="flex items-center gap-2 text-white text-xs">
+              <span>Frame {currentFrame + 1}/{frames.length}</span>
+              <div className="w-20 h-1 bg-white/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-200"
+                  style={{ width: `${((currentFrame + 1) / frames.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          {/* Frame indicator dots */}
+          <div className="absolute top-2 right-2 flex gap-1">
+            {frames.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setCurrentFrame(idx);
+                  setIsPlaying(false);
+                }}
+                className={cn(
+                  "w-2 h-2 rounded-full transition-all",
+                  currentFrame === idx ? "bg-primary scale-125" : "bg-white/50 hover:bg-white/80"
+                )}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export const ChatMessage = ({ role, content, imageUrl, frames, isStreaming = false }: ChatMessageProps) => {
+  const hasFrames = frames && frames.length > 0;
+  
   return (
     <div
       className={cn(
@@ -37,7 +108,11 @@ export const ChatMessage = ({ role, content, imageUrl, isStreaming = false }: Ch
             <span className="text-sm">Thinking...</span>
           </div>
         ) : null}
-        {imageUrl && (
+        {hasFrames ? (
+          <div className="mt-3">
+            <AnimatedFramePlayer frames={frames} fps={4} />
+          </div>
+        ) : imageUrl ? (
           <div className="mt-3">
             <img 
               src={imageUrl} 
@@ -45,7 +120,7 @@ export const ChatMessage = ({ role, content, imageUrl, isStreaming = false }: Ch
               className="rounded-lg max-w-full h-auto shadow-lg"
             />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
