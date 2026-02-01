@@ -10,7 +10,7 @@ interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
-const AnimatedFramePlayer = ({ frames, fps = 4 }: { frames: string[]; fps?: number }) => {
+const AnimatedFramePlayer = ({ frames, fps = 8 }: { frames: string[]; fps?: number }) => {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -110,7 +110,7 @@ export const ChatMessage = ({ role, content, imageUrl, frames, isStreaming = fal
         ) : null}
         {hasFrames ? (
           <div className="mt-3">
-            <AnimatedFramePlayer frames={frames} fps={4} />
+            <AnimatedFramePlayer frames={frames} fps={8} />
           </div>
         ) : imageUrl ? (
           <div className="mt-3">
