@@ -36,9 +36,8 @@ async function generateSDXLFrame(
         },
         body: JSON.stringify({
           prompt: enhancedPrompt,
-          num_steps: 30,
-          guidance: 8.5,
-          seed: 42 + frameNumber * 1000, // Consistent seed progression for smooth animation
+          num_steps: 20,
+          guidance: 7.5,
         }),
       }
     );
