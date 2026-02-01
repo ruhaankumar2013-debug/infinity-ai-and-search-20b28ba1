@@ -13,28 +13,16 @@ async function generateSDXLFrame(
   totalFrames: number
 ): Promise<string | null> {
   try {
-    // Calculate very subtle progression percentage for smooth animation
-    const progressPercent = Math.round((frameNumber / (totalFrames - 1)) * 100);
+    // Calculate exact micro-progress for tiny frame-to-frame changes
+    const progressPercent = ((frameNumber / (totalFrames - 1)) * 100).toFixed(1);
     
-    // Very subtle motion hints - tiny incremental changes
-    const getSubtleMotionHint = (frame: number, total: number): string => {
-      const progress = frame / (total - 1);
-      if (progress === 0) return "static starting pose, frozen moment";
-      if (progress < 0.1) return "imperceptible movement beginning, 5% motion";
-      if (progress < 0.2) return "barely noticeable shift, 10% progression";
-      if (progress < 0.3) return "subtle change, 20% into motion";
-      if (progress < 0.4) return "gentle progression, 30% movement";
-      if (progress < 0.5) return "smooth transition, 40% through motion";
-      if (progress < 0.6) return "midpoint of action, 50% progression";
-      if (progress < 0.7) return "continuing motion, 60% complete";
-      if (progress < 0.75) return "approaching peak, 70% through";
-      if (progress < 0.85) return "near completion, 80% motion";
-      if (progress < 0.95) return "almost complete, 90% progression";
-      return "final position, motion complete, 100%";
-    };
+    // Ultra-consistent prompt - emphasize IDENTICAL scene with micro movement only
+    const motionPhrase = frameNumber === 0 
+      ? "frozen at exact starting position, 0% motion"
+      : `exactly ${progressPercent}% through the motion, microscopic change from previous frame`;
     
-    const hint = getSubtleMotionHint(frameNumber, totalFrames);
-    const enhancedPrompt = `${prompt}, ${hint}, frame ${frameNumber + 1} of ${totalFrames}, ultra smooth animation, consistent character and scene, identical lighting, same camera angle, photorealistic, 8k quality, seamless motion`;
+    // Build ultra-consistent prompt emphasizing frame-to-frame coherence
+    const enhancedPrompt = `EXACT SAME SCENE: ${prompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}, CRITICAL: identical background, identical lighting, identical colors, identical composition, identical art style, identical camera angle, subject moved by tiny fraction only, seamless animation frame, photorealistic, 8k masterpiece`;
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
@@ -46,8 +34,8 @@ async function generateSDXLFrame(
         },
         body: JSON.stringify({
           prompt: enhancedPrompt,
-          num_steps: 20,
-          guidance: 7.5,
+          num_steps: 25,
+          guidance: 8.0,
         }),
       }
     );
@@ -81,7 +69,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, frameCount = 16 } = await req.json();
+    const { prompt, frameCount = 40 } = await req.json();
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return new Response(
@@ -99,8 +87,8 @@ serve(async (req) => {
       throw new Error("Cloudflare credentials not configured");
     }
 
-    const numFrames = Math.min(Math.max(frameCount, 4), 16); // Between 4-16 frames
-    console.log(`[generate-video] Generating ${numFrames} high-quality SDXL frames for smooth animation...`);
+    const numFrames = Math.min(Math.max(frameCount, 8), 40); // Between 8-40 frames
+    console.log(`[generate-video] Generating ${numFrames} frames for smooth video-like animation...`);
 
     // Generate frames in parallel for speed
     const framePromises = Array.from({ length: numFrames }, (_, i) =>
