@@ -55,50 +55,6 @@ All colors MUST be HSL.
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .dark {
-    --background: 220 15% 8%;
-    --foreground: 210 40% 98%;
-
-    --card: 220 15% 10%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 220 15% 10%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 217 91% 60%;
-    --primary-foreground: 220 15% 8%;
-
-    --secondary: 265 89% 65%;
-    --secondary-foreground: 220 15% 8%;
-
-    --muted: 220 15% 15%;
-    --muted-foreground: 217 10% 60%;
-
-    --accent: 265 89% 65%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 217 91% 60%;
-    
-    --sidebar-background: 220 15% 10%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 60%;
-    --sidebar-primary-foreground: 220 15% 8%;
-    --sidebar-accent: 220 15% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 220 15% 20%;
-    --sidebar-ring: 217 91% 60%;
-
-    /* Custom design tokens for dark mode */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(265 89% 65%));
-    --gradient-glow: linear-gradient(180deg, hsl(217 91% 60% / 0.1), hsl(265 89% 65% / 0.05));
-    --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.3);
-    --shadow-soft: 0 4px 20px hsl(220 15% 5% / 0.5);
-  }
 }
 
 @layer base {
@@ -114,10 +70,6 @@ All colors MUST be HSL.
 @layer utilities {
   mark {
     @apply bg-primary/20 text-primary font-medium rounded px-0.5;
-  }
-  
-  .dark mark {
-    @apply bg-primary/30;
   }
 
   kbd {

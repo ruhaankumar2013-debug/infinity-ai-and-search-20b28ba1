@@ -12,7 +12,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
 import { SearchTab } from "@/components/SearchTab";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import logo from "@/assets/logo.png";
 import type { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import { z } from "zod";
 
@@ -665,14 +665,11 @@ const Index = () => {
         {/* Header */}
         <header className="relative z-10 px-6 py-4 flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
-              <span className="text-white text-xl font-bold">∞</span>
-            </div>
+            <img src={logo} alt="Infinity AI" className="w-10 h-10 rounded-xl object-cover shadow-lg shadow-primary/20" />
             <span className="text-xl font-semibold text-foreground">Infinity AI</span>
           </div>
 
           <div className="flex items-center gap-3">
-            <ThemeToggle />
             {user ? (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground hidden sm:block">{user.email}</span>
@@ -693,43 +690,12 @@ const Index = () => {
         {/* Hero Section */}
         <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-16 pb-24 min-h-[calc(100vh-80px)]">
           {/* Infinity Symbol */}
-          <div 
-            className="mb-8 p-8 rounded-3xl"
-            style={{
-              background: "linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.6))",
-              boxShadow: "0 20px 60px rgba(139, 92, 246, 0.12), 0 8px 24px rgba(96, 165, 250, 0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
-              backdropFilter: "blur(20px)",
-            }}
-          >
-            <svg 
-              width="120" 
-              height="60" 
-              viewBox="0 0 120 60" 
-              fill="none" 
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient id="infinityGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#8B5CF6" />
-                  <stop offset="50%" stopColor="#6366F1" />
-                  <stop offset="100%" stopColor="#60A5FA" />
-                </linearGradient>
-              </defs>
-              <path 
-                d="M30 30C30 16 42 10 54 22C66 34 78 28 90 30C102 32 102 40 90 38C78 36 66 42 54 30C42 18 30 24 30 30Z" 
-                stroke="url(#infinityGradient)" 
-                strokeWidth="6" 
-                strokeLinecap="round"
-                fill="none"
-              />
-              <path 
-                d="M90 30C90 44 78 50 66 38C54 26 42 32 30 30C18 28 18 20 30 22C42 24 54 18 66 30C78 42 90 36 90 30Z" 
-                stroke="url(#infinityGradient)" 
-                strokeWidth="6" 
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
+          <div className="mb-8">
+            <img 
+              src={logo} 
+              alt="Infinity AI" 
+              className="w-32 h-32 object-contain rounded-2xl shadow-lg"
+            />
           </div>
 
           {/* Headline */}
@@ -871,9 +837,7 @@ const Index = () => {
                 onClick={() => setViewMode("home")}
                 className="flex items-center gap-3 hover:opacity-80 transition-opacity"
               >
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                  <span className="text-background text-lg font-bold">∞</span>
-                </div>
+                <img src={logo} alt="Infinity AI" className="w-10 h-10 rounded-lg object-cover" />
                 <div>
                   <h1 className="text-lg font-semibold text-foreground">Infinity AI</h1>
                   <p className="text-xs text-muted-foreground">Search & Chat</p>
@@ -908,7 +872,6 @@ const Index = () => {
                   Admin
                 </Button>
               )}
-              <ThemeToggle />
               {user ? (
                 <Button variant="outline" onClick={handleLogout} size="sm">
                   <LogOut className="w-4 h-4 mr-2" />

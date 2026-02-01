@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { Loader2, MessageSquare } from "lucide-react";
+import logo from "@/assets/logo.png";
+import { Loader2 } from "lucide-react";
 import { z } from "zod";
 
 // Validation schema
@@ -100,13 +100,10 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/20 p-4 relative">
-      <div className="absolute top-4 right-4">
-        <ThemeToggle />
-      </div>
       <Card className="w-full max-w-md p-8 space-y-6">
         <div className="flex flex-col items-center space-y-2">
-          <MessageSquare className="w-12 h-12 text-primary" />
-          <h1 className="text-2xl font-bold text-foreground">AI Chat Assistant</h1>
+          <img src={logo} alt="Infinity AI" className="w-16 h-16 rounded-xl object-cover" />
+          <h1 className="text-2xl font-bold text-foreground">Infinity AI</h1>
           <p className="text-sm text-muted-foreground">
             {isLogin ? "Sign in to your account" : "Create a new account"}
           </p>
