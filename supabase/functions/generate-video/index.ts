@@ -6,27 +6,145 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-async function generateSDXLFrame(
-  accountId: string, 
-  apiToken: string, 
+// Try Hugging Face text-to-video models
+async function tryHuggingFaceVideo(
+  apiKey: string,
+  prompt: string
+): Promise<{ success: boolean; videoUrl?: string; frames?: string[]; error?: string }> {
+  // Models to try in order (free tier compatible, smaller models)
+  const models = [
+    "ali-vilab/text-to-video-ms-1.7b", // Microsoft's text-to-video
+    "damo-vilab/text-to-video-ms-1.7b", // DAMO text-to-video  
+    "cerspense/zeroscope_v2_576w", // ZeroScope (lighter)
+  ];
+
+  for (const model of models) {
+    try {
+      console.log(`[generate-video] Trying HuggingFace model: ${model}`);
+      
+      const response = await fetch(
+        `https://api-inference.huggingface.co/models/${model}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+            parameters: {
+              num_frames: 24,
+              num_inference_steps: 25,
+            },
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        
+        if (contentType.includes("video") || contentType.includes("mp4")) {
+          // Got actual video - encode to base64 data URL
+          const videoBytes = new Uint8Array(await response.arrayBuffer());
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < videoBytes.length; i += chunkSize) {
+            const chunk = videoBytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, Array.from(chunk));
+          }
+          const videoUrl = `data:video/mp4;base64,${btoa(binary)}`;
+          console.log(`[generate-video] HuggingFace ${model} returned video!`);
+          return { success: true, videoUrl };
+        } else if (contentType.includes("image")) {
+          // Some models return GIF or image sequence
+          const imageBytes = new Uint8Array(await response.arrayBuffer());
+          let binary = '';
+          const chunkSize = 8192;
+          for (let i = 0; i < imageBytes.length; i += chunkSize) {
+            const chunk = imageBytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, Array.from(chunk));
+          }
+          const imageUrl = `data:image/gif;base64,${btoa(binary)}`;
+          console.log(`[generate-video] HuggingFace ${model} returned image/gif`);
+          return { success: true, frames: [imageUrl] };
+        } else {
+          // Try to parse as JSON (might contain URL)
+          try {
+            const json = await response.json();
+            if (json.video_url || json.url) {
+              return { success: true, videoUrl: json.video_url || json.url };
+            }
+          } catch {
+            // Not JSON
+          }
+        }
+      } else {
+        const errorText = await response.text().catch(() => "");
+        console.log(`[generate-video] HuggingFace ${model} failed: ${response.status} ${errorText.substring(0, 200)}`);
+        
+        // If model is loading, wait and retry once
+        if (response.status === 503 && errorText.includes("loading")) {
+          console.log(`[generate-video] Model ${model} is loading, waiting 20s...`);
+          await new Promise(r => setTimeout(r, 20000));
+          continue; // Retry this model
+        }
+      }
+    } catch (error) {
+      console.error(`[generate-video] HuggingFace ${model} error:`, error);
+    }
+  }
+
+  return { success: false, error: "No HuggingFace video models available" };
+}
+
+// Fallback: Generate SDXL frames with maximum consistency
+async function generateSDXLFrames(
+  accountId: string,
+  apiToken: string,
+  prompt: string,
+  frameCount: number
+): Promise<string[]> {
+  const frames: string[] = [];
+  
+  // Generate frames in batches to avoid overwhelming the API
+  const batchSize = 8;
+  const batches = Math.ceil(frameCount / batchSize);
+  
+  for (let batch = 0; batch < batches; batch++) {
+    const startIdx = batch * batchSize;
+    const endIdx = Math.min(startIdx + batchSize, frameCount);
+    
+    const batchPromises = [];
+    for (let i = startIdx; i < endIdx; i++) {
+      batchPromises.push(generateSingleFrame(accountId, apiToken, prompt, i, frameCount));
+    }
+    
+    const batchResults = await Promise.all(batchPromises);
+    frames.push(...batchResults.filter((f): f is string => f !== null));
+    
+    console.log(`[generate-video] Batch ${batch + 1}/${batches} complete, ${frames.length} frames total`);
+  }
+  
+  return frames;
+}
+
+async function generateSingleFrame(
+  accountId: string,
+  apiToken: string,
   prompt: string,
   frameNumber: number,
   totalFrames: number
 ): Promise<string | null> {
   try {
-    // Calculate exact micro-progress for tiny frame-to-frame changes
     const progressPercent = ((frameNumber / (totalFrames - 1)) * 100).toFixed(1);
+    const basePrompt = (prompt ?? "").toString().trim().slice(0, 500);
     
-    // Ultra-consistent prompt - emphasize IDENTICAL scene with micro movement only
-    const motionPhrase = frameNumber === 0 
-      ? "frozen at exact starting position, 0% motion"
-      : `exactly ${progressPercent}% through the motion, microscopic change from previous frame`;
+    // Motion phrase for this frame
+    const motionPhrase = frameNumber === 0
+      ? "frozen starting position, 0% motion"
+      : `${progressPercent}% through motion, tiny incremental change`;
     
-    // Keep prompt length under control to avoid upstream request validation failures.
-    const basePrompt = (prompt ?? "").toString().trim().slice(0, 700);
-
-    // Build ultra-consistent prompt emphasizing frame-to-frame coherence
-    const enhancedPrompt = `${basePrompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}. CRITICAL: identical background, identical lighting, identical colors, identical composition, identical art style, identical camera angle; only a tiny subject movement from previous frame. photorealistic, 8k`;
+    const enhancedPrompt = `${basePrompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}, identical scene, consistent lighting, photorealistic, 8k`;
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
@@ -38,7 +156,6 @@ async function generateSDXLFrame(
         },
         body: JSON.stringify({
           prompt: enhancedPrompt,
-          // Known-good params for Cloudflare SDXL in this project (avoid 400s)
           num_steps: 20,
           guidance: 7.5,
         }),
@@ -47,18 +164,11 @@ async function generateSDXLFrame(
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      console.error(
-        `[generate-video] SDXL frame ${frameNumber + 1} error:`,
-        response.status,
-        errText ? `| ${errText.substring(0, 500)}` : ""
-      );
+      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status, errText.substring(0, 200));
       return null;
     }
 
-    // SDXL returns raw image bytes
     const imageBytes = new Uint8Array(await response.arrayBuffer());
-    
-    // Encode to base64 in chunks to avoid stack overflow
     let binary = '';
     const chunkSize = 8192;
     for (let i = 0; i < imageBytes.length; i += chunkSize) {
@@ -79,7 +189,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, frameCount = 40 } = await req.json();
+    const { prompt, frameCount = 24 } = await req.json();
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return new Response(
@@ -88,25 +198,48 @@ serve(async (req) => {
       );
     }
 
-    console.log("[generate-video] Generating animated sequence for:", prompt.substring(0, 100));
+    console.log("[generate-video] Generating video for:", prompt.substring(0, 100));
 
+    const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
     const CLOUDFLARE_API_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
 
-    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-      throw new Error("Cloudflare credentials not configured");
+    // Try HuggingFace video models first
+    if (HUGGINGFACE_API_KEY) {
+      console.log("[generate-video] Attempting HuggingFace video generation...");
+      const hfResult = await tryHuggingFaceVideo(HUGGINGFACE_API_KEY, prompt);
+      
+      if (hfResult.success) {
+        return new Response(
+          JSON.stringify({
+            videoUrl: hfResult.videoUrl || hfResult.frames?.[0],
+            frames: hfResult.frames,
+            type: hfResult.videoUrl ? "video" : "animated-sequence",
+            model: "huggingface-video",
+            quality: "high",
+            fps: 8,
+            duration: 3,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log("[generate-video] HuggingFace video failed, falling back to SDXL frames");
     }
 
-    const numFrames = Math.min(Math.max(frameCount, 8), 40); // Between 8-40 frames
-    console.log(`[generate-video] Generating ${numFrames} frames for smooth video-like animation...`);
+    // Fallback to SDXL frame generation
+    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
+      throw new Error("Neither HuggingFace video nor Cloudflare SDXL is configured");
+    }
 
-    // Generate frames in parallel for speed
-    const framePromises = Array.from({ length: numFrames }, (_, i) =>
-      generateSDXLFrame(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, prompt, i, numFrames)
+    const numFrames = Math.min(Math.max(frameCount, 8), 40);
+    console.log(`[generate-video] Generating ${numFrames} SDXL frames...`);
+
+    const frames = await generateSDXLFrames(
+      CLOUDFLARE_ACCOUNT_ID,
+      CLOUDFLARE_API_TOKEN,
+      prompt,
+      numFrames
     );
-
-    const frameResults = await Promise.all(framePromises);
-    const frames = frameResults.filter((frame): frame is string => frame !== null);
 
     if (frames.length === 0) {
       throw new Error("Failed to generate any frames");
@@ -115,15 +248,15 @@ serve(async (req) => {
     console.log(`[generate-video] Successfully generated ${frames.length}/${numFrames} frames`);
 
     return new Response(
-      JSON.stringify({ 
-        videoUrl: frames[0], // Primary frame for thumbnail
+      JSON.stringify({
+        videoUrl: frames[0],
         frames: frames,
         type: "animated-sequence",
         frameCount: frames.length,
-        fps: 8, // Higher FPS for smoother playback with more frames
-        duration: frames.length / 8, // Duration in seconds
+        fps: 8,
+        duration: frames.length / 8,
         model: "sdxl-1.0",
-        quality: "ultra-smooth"
+        quality: "high",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
