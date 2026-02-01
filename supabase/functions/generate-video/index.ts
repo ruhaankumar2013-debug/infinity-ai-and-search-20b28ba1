@@ -32,7 +32,7 @@ serve(async (req) => {
     console.log("[generate-video] Step 1: Generating initial frame with SDXL...");
     
     const imageResponse = await fetch(
-      "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+      "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
       {
         method: "POST",
         headers: {
@@ -68,15 +68,22 @@ serve(async (req) => {
 
     const imageBlob = await imageResponse.blob();
     const imageArrayBuffer = await imageBlob.arrayBuffer();
-    const imageBase64 = btoa(
-      new Uint8Array(imageArrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
+    const imageBytes = new Uint8Array(imageArrayBuffer);
+    
+    // Encode image to base64 in chunks to avoid stack overflow
+    let imageBinary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < imageBytes.length; i += chunkSize) {
+      const chunk = imageBytes.subarray(i, i + chunkSize);
+      imageBinary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const imageBase64 = btoa(imageBinary);
 
     console.log("[generate-video] Step 2: Generating video with Stable Video Diffusion...");
 
     // Step 2: Use the image with Stable Video Diffusion
     const videoResponse = await fetch(
-      "https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt",
+      "https://router.huggingface.co/hf-inference/models/stabilityai/stable-video-diffusion-img2vid-xt",
       {
         method: "POST",
         headers: {
@@ -137,7 +144,6 @@ serve(async (req) => {
     
     // Encode video to base64 in chunks to avoid stack overflow
     let videoBinary = '';
-    const chunkSize = 8192;
     for (let i = 0; i < videoBytes.length; i += chunkSize) {
       const chunk = videoBytes.subarray(i, i + chunkSize);
       videoBinary += String.fromCharCode.apply(null, Array.from(chunk));
