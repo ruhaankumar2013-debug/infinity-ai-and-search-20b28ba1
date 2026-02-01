@@ -20,6 +20,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   imageUrl?: string;
+  frames?: string[];
 }
 interface Conversation {
   id: string;
@@ -291,19 +292,20 @@ const Index = () => {
             return newMessages;
           });
         } else if (targetModel === "stable-video-diffusion") {
-          setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video preview..." }]);
+          setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating animated sequence with SDXL..." }]);
           
           const { data: vidData, error: vidError } = await supabase.functions.invoke("generate-video", {
-            body: { prompt: modifiedPrompt },
+            body: { prompt: modifiedPrompt, frameCount: 6 },
           });
 
           if (vidError) throw vidError;
           
+          const frames = vidData.frames || [vidData.videoUrl];
           imageUrl = vidData.videoUrl;
-          assistantContent = vidData.message || "Here's your video preview:";
+          assistantContent = `Here's your ${frames.length}-frame animated sequence:`;
           setMessages((prev) => {
             const newMessages = [...prev];
-            newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+            newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl, frames };
             return newMessages;
           });
         } else if (targetModel === "gpt-oss-120b") {
@@ -345,19 +347,20 @@ const Index = () => {
     }
     else if (selectedModelId === "@stability/svd") {
       try {
-        setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating video..." }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: "🎬 Generating animated sequence with SDXL..." }]);
         
         const { data: vidData, error: vidError } = await supabase.functions.invoke("generate-video", {
-          body: { prompt: lastUserMessage.content },
+          body: { prompt: lastUserMessage.content, frameCount: 6 },
         });
 
         if (vidError) throw vidError;
         
+        const frames = vidData.frames || [vidData.videoUrl];
         imageUrl = vidData.videoUrl;
-        assistantContent = vidData.message || "Here's your video preview:";
+        assistantContent = `Here's your ${frames.length}-frame animated sequence:`;
         setMessages((prev) => {
           const newMessages = [...prev];
-          newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl };
+          newMessages[newMessages.length - 1] = { role: "assistant", content: assistantContent, imageUrl, frames };
           return newMessages;
         });
       } catch (error) {
@@ -961,6 +964,7 @@ const Index = () => {
                           role={msg.role}
                           content={msg.content}
                           imageUrl={msg.imageUrl}
+                          frames={msg.frames}
                           isStreaming={isStreaming && idx === messages.length - 1 && msg.role === "assistant"}
                         />
                       ))}
