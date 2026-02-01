@@ -2,7 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 async function generateSDXLFrame(
@@ -21,8 +22,11 @@ async function generateSDXLFrame(
       ? "frozen at exact starting position, 0% motion"
       : `exactly ${progressPercent}% through the motion, microscopic change from previous frame`;
     
+    // Keep prompt length under control to avoid upstream request validation failures.
+    const basePrompt = (prompt ?? "").toString().trim().slice(0, 700);
+
     // Build ultra-consistent prompt emphasizing frame-to-frame coherence
-    const enhancedPrompt = `EXACT SAME SCENE: ${prompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}, CRITICAL: identical background, identical lighting, identical colors, identical composition, identical art style, identical camera angle, subject moved by tiny fraction only, seamless animation frame, photorealistic, 8k masterpiece`;
+    const enhancedPrompt = `${basePrompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}. CRITICAL: identical background, identical lighting, identical colors, identical composition, identical art style, identical camera angle; only a tiny subject movement from previous frame. photorealistic, 8k`;
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
@@ -34,14 +38,20 @@ async function generateSDXLFrame(
         },
         body: JSON.stringify({
           prompt: enhancedPrompt,
-          num_steps: 25,
-          guidance: 8.0,
+          // Known-good params for Cloudflare SDXL in this project (avoid 400s)
+          num_steps: 20,
+          guidance: 7.5,
         }),
       }
     );
 
     if (!response.ok) {
-      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status);
+      const errText = await response.text().catch(() => "");
+      console.error(
+        `[generate-video] SDXL frame ${frameNumber + 1} error:`,
+        response.status,
+        errText ? `| ${errText.substring(0, 500)}` : ""
+      );
       return null;
     }
 
