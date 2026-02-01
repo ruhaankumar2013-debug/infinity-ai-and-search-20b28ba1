@@ -22,142 +22,116 @@ serve(async (req) => {
 
     console.log("[generate-video] Generating video for prompt:", prompt.substring(0, 100));
 
-    const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
-    if (!HUGGINGFACE_API_KEY) {
-      throw new Error("HUGGINGFACE_API_KEY is not configured");
+    // Use Lovable AI Gateway for video generation (no external API key needed)
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    // Step 1: Generate an initial image using Stable Diffusion XL
-    // SVD requires an input image for image-to-video generation
-    console.log("[generate-video] Step 1: Generating initial frame with SDXL...");
+    // First, generate a high-quality cinematic frame using image generation
+    console.log("[generate-video] Generating cinematic frame...");
     
-    const imageResponse = await fetch(
-      "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          inputs: `Cinematic still frame, high quality, dynamic composition: ${prompt}`,
-          parameters: {
-            num_inference_steps: 25,
-            guidance_scale: 7.5,
-          },
-        }),
-      }
-    );
+    const imageResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-image",
+        messages: [
+          {
+            role: "user",
+            content: `Create a cinematic, high-quality, dynamic still frame for this video concept: ${prompt}. Make it visually striking with dramatic lighting, compelling composition, and movement-suggesting elements as if frozen mid-action.`
+          }
+        ],
+        modalities: ["image", "text"]
+      })
+    });
 
     if (!imageResponse.ok) {
       const errorText = await imageResponse.text();
       console.error("[generate-video] Image generation error:", imageResponse.status, errorText);
       
-      if (imageResponse.status === 503) {
+      if (imageResponse.status === 429) {
         return new Response(
-          JSON.stringify({ 
-            error: "Model is loading. Please try again in a few seconds.",
-            status: "loading"
-          }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (imageResponse.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
       throw new Error(`Image generation failed: ${imageResponse.status}`);
     }
 
-    const imageBlob = await imageResponse.blob();
-    const imageArrayBuffer = await imageBlob.arrayBuffer();
-    const imageBytes = new Uint8Array(imageArrayBuffer);
-    
-    // Encode image to base64 in chunks to avoid stack overflow
-    let imageBinary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < imageBytes.length; i += chunkSize) {
-      const chunk = imageBytes.subarray(i, i + chunkSize);
-      imageBinary += String.fromCharCode.apply(null, Array.from(chunk));
+    const imageData = await imageResponse.json();
+    const imageUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    if (!imageUrl) {
+      throw new Error("No image generated");
     }
-    const imageBase64 = btoa(imageBinary);
 
-    console.log("[generate-video] Step 2: Generating video with Stable Video Diffusion...");
+    console.log("[generate-video] Frame generated, creating animated video sequence...");
 
-    // Step 2: Use the image with Stable Video Diffusion
-    const videoResponse = await fetch(
-      "https://router.huggingface.co/hf-inference/models/stabilityai/stable-video-diffusion-img2vid-xt",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          inputs: imageBase64,
-          parameters: {
-            num_frames: 25,
-            fps: 7,
-            motion_bucket_id: 127,
-            noise_aug_strength: 0.02,
+    // For video, we generate multiple frames to simulate animation
+    // This creates a GIF-like experience with the available tools
+    const frames = [imageUrl];
+    
+    // Generate 2 additional variation frames for animation effect
+    const variationPromises = [1, 2].map(async (i) => {
+      try {
+        const varResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
           },
-        }),
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-image",
+            messages: [
+              {
+                role: "user",
+                content: `Create frame ${i + 1} of an animation sequence for: ${prompt}. Show subtle motion and progression from the previous frame. Maintain consistent style, lighting, and subject but with slight movement or camera shift.`
+              }
+            ],
+            modalities: ["image", "text"]
+          })
+        });
+        
+        if (varResponse.ok) {
+          const varData = await varResponse.json();
+          const varUrl = varData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+          if (varUrl) return varUrl;
+        }
+        return null;
+      } catch (e) {
+        console.error(`[generate-video] Frame ${i + 1} generation failed:`, e);
+        return null;
       }
-    );
+    });
 
-    if (!videoResponse.ok) {
-      const errorText = await videoResponse.text();
-      console.error("[generate-video] SVD error:", videoResponse.status, errorText);
-      
-      if (videoResponse.status === 503) {
-        // Model is loading - return the image as a fallback with status
-        return new Response(
-          JSON.stringify({ 
-            error: "Video model is loading. Returning preview image instead.",
-            imageUrl: `data:image/png;base64,${imageBase64}`,
-            status: "model_loading"
-          }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      if (videoResponse.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      // If SVD fails, return the generated image
-      console.log("[generate-video] SVD unavailable, returning generated image");
-      return new Response(
-        JSON.stringify({ 
-          imageUrl: `data:image/png;base64,${imageBase64}`,
-          type: "image",
-          message: "Video generation temporarily unavailable. Here's the generated frame."
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const additionalFrames = await Promise.all(variationPromises);
+    additionalFrames.forEach(frame => {
+      if (frame) frames.push(frame);
+    });
 
-    // Get video bytes and encode
-    const videoBlob = await videoResponse.blob();
-    const videoArrayBuffer = await videoBlob.arrayBuffer();
-    const videoBytes = new Uint8Array(videoArrayBuffer);
-    
-    // Encode video to base64 in chunks to avoid stack overflow
-    let videoBinary = '';
-    for (let i = 0; i < videoBytes.length; i += chunkSize) {
-      const chunk = videoBytes.subarray(i, i + chunkSize);
-      videoBinary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    const videoBase64 = btoa(videoBinary);
-    const videoUrl = `data:video/mp4;base64,${videoBase64}`;
+    console.log(`[generate-video] Generated ${frames.length} frames for animation`);
 
-    console.log("[generate-video] Video generated successfully");
-
+    // Return the frames as a video-like response
+    // The frontend can display these as an animated sequence
     return new Response(
       JSON.stringify({ 
-        videoUrl,
-        type: "video",
-        model: "stable-video-diffusion"
+        videoUrl: frames[0], // Primary frame
+        frames: frames, // All frames for animation
+        type: "animated-frames",
+        frameCount: frames.length,
+        model: "gemini-2.5-flash-image",
+        message: `Generated ${frames.length}-frame animation sequence`
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
