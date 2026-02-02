@@ -959,7 +959,7 @@ const Index = () => {
                   <Menu className="h-5 w-5" />
                 </SidebarTrigger>}
               <button onClick={() => setViewMode("home")} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-                <img src={logo} alt="Infinity AI" className="w-10 h-10 rounded-lg object-cover" />
+                <img alt="Infinity AI" className="w-10 h-10 rounded-lg object-cover" src="/lovable-uploads/0a14c839-e491-45b6-80f7-f4f38ade99ca.png" />
                 <div>
                   <h1 className="text-lg font-semibold text-foreground">Infinity AI</h1>
                   <p className="text-xs text-muted-foreground">Search & Chat</p>
