@@ -38,33 +38,34 @@ export const AISearchSummary = ({
     setSummary("");
   
     try {
-      const prompt = `
-  Summarize the following search results clearly and concisely:
-  
-  ${results.map(r => `• ${r.title}: ${r.snippet}`).join("\n")}
-  `;
-  
-      const res = await fetch("http://127.0.0.1:8787", {
+      const prompt = `Summarize the following search results clearly and concisely:\n\n${results.map(r => `• ${r.title}: ${r.snippet}`).join("\n")}`;
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openrouter-chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
+          messages: [{ role: "user", content: prompt }],
+          model: "gpt-oss-120b",
+          stream: false,
         }),
         signal: controller.signal,
       });
-  
+
+      if (!res.ok) {
+        throw new Error("Failed to generate summary");
+      }
+
       const data = await res.json();
-      setSummary(data.content || "No response.");
+      const content = data.choices?.[0]?.message?.content || data.content || "No response.";
+      setSummary(content);
     } catch (err) {
-      console.error(err);
-      setSummary("Failed to generate summary.");
+      if ((err as Error).name !== "AbortError") {
+        console.error(err);
+        setSummary("Failed to generate summary.");
+      }
     } finally {
       setLoading(false);
     }
