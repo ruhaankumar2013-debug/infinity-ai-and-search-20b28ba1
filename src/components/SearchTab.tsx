@@ -8,23 +8,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { SearchResults } from "@/components/SearchResults";
 import { AISearchSummary } from "@/components/AISearchSummary";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Keyboard } from "lucide-react";
-
 interface SearchResult {
   title: string;
   url: string;
@@ -32,10 +18,8 @@ interface SearchResult {
   relevance?: number;
   source?: string;
 }
-
 const RECENT_SEARCHES_KEY = "infinity_search_recent";
 const MAX_RECENT_SEARCHES = 5;
-
 export const SearchTab = () => {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -46,7 +30,9 @@ export const SearchTab = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -67,11 +53,9 @@ export const SearchTab = () => {
         setShowShortcuts(true);
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
   useEffect(() => {
     // Load recent searches from localStorage
     const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
@@ -83,42 +67,37 @@ export const SearchTab = () => {
       }
     }
   }, []);
-
   const saveRecentSearch = (searchQuery: string) => {
     if (!searchQuery.trim()) return;
     const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, MAX_RECENT_SEARCHES);
     setRecentSearches(updated);
     localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
   };
-
   const clearRecentSearches = () => {
     setRecentSearches([]);
     localStorage.removeItem(RECENT_SEARCHES_KEY);
   };
-
   const handleSearch = async (searchQuery?: string) => {
     const finalQuery = searchQuery || query.trim();
     if (!finalQuery) return;
-
     setIsSearching(true);
     setLastQuery(finalQuery);
     setShowSuggestions(false);
     saveRecentSearch(finalQuery);
-
     try {
       // Try multiple search sources for better results
-      const searchPromises = [
-        supabase.functions.invoke('duckduckgo-search', {
-          body: { query: finalQuery }
-        }),
-        supabase.functions.invoke('web-search', {
-          body: { query: finalQuery, type: 'search' }
-        })
-      ];
-
+      const searchPromises = [supabase.functions.invoke('duckduckgo-search', {
+        body: {
+          query: finalQuery
+        }
+      }), supabase.functions.invoke('web-search', {
+        body: {
+          query: finalQuery,
+          type: 'search'
+        }
+      })];
       const responses = await Promise.allSettled(searchPromises);
       const allResults: SearchResult[] = [];
-
       responses.forEach((response, index) => {
         if (response.status === 'fulfilled' && response.value.data?.results) {
           const sourceResults = response.value.data.results.map((r: SearchResult) => ({
@@ -133,7 +112,6 @@ export const SearchTab = () => {
       // Deduplicate and rank results
       const uniqueResults = deduplicateResults(allResults);
       const rankedResults = rankResults(uniqueResults, finalQuery);
-
       if (rankedResults.length > 0) {
         setResults(rankedResults.slice(0, 20)); // Show top 20 results
       } else {
@@ -141,7 +119,7 @@ export const SearchTab = () => {
         toast({
           title: "No results found",
           description: "Try a different search query or check your connection",
-          duration: 3000,
+          duration: 3000
         });
       }
     } catch (error) {
@@ -150,14 +128,13 @@ export const SearchTab = () => {
         title: "Search failed",
         description: "Failed to perform search. Please try again.",
         variant: "destructive",
-        duration: 3000,
+        duration: 3000
       });
       setResults([]);
     } finally {
       setIsSearching(false);
     }
   };
-
   const calculateRelevance = (result: SearchResult, query: string): number => {
     let score = 0;
     const lowerQuery = query.toLowerCase();
@@ -182,10 +159,8 @@ export const SearchTab = () => {
     const domain = new URL(result.url).hostname;
     if (domain.includes('edu') || domain.includes('gov') || domain.includes('org')) score += 2;
     if (domain.includes('wikipedia')) score += 3;
-
     return score;
   };
-
   const deduplicateResults = (results: SearchResult[]): SearchResult[] => {
     const seen = new Set<string>();
     return results.filter(result => {
@@ -195,7 +170,6 @@ export const SearchTab = () => {
       return true;
     });
   };
-
   const rankResults = (results: SearchResult[], query: string): SearchResult[] => {
     return results.sort((a, b) => {
       const scoreA = a.relevance || calculateRelevance(a, query);
@@ -203,20 +177,17 @@ export const SearchTab = () => {
       return scoreB - scoreA;
     });
   };
-
   const handleRecentSearchClick = (recentQuery: string) => {
     setQuery(recentQuery);
     handleSearch(recentQuery);
   };
-
-  return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+  return <div className="space-y-6 max-w-6xl mx-auto">
       <Card className="p-6 bg-card/50 backdrop-blur-sm border-border shadow-xl hover:shadow-2xl transition-shadow">
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary via-primary/90 to-secondary flex items-center justify-center shadow-lg ring-2 ring-primary/20">
-                <Sparkles className="w-7 h-7 text-background" />
+                <Search className="w-7 h-7 text-background" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -297,136 +268,81 @@ export const SearchTab = () => {
               <div className="flex-1 relative">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
-            <Input
-                    ref={inputRef}
-              value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      setShowSuggestions(e.target.value.length > 0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isSearching) {
-                        handleSearch();
-                      } else if (e.key === "Escape") {
-                        setShowSuggestions(false);
-                      }
-                    }}
-                    onFocus={() => setShowSuggestions(query.length > 0 || recentSearches.length > 0)}
-                    placeholder="Search the web with enhanced results..."
-              disabled={isSearching}
-                    className="pl-12 pr-24 text-lg h-14 border-2 focus:border-primary transition-colors"
-                  />
-                  {!query && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+            <Input ref={inputRef} value={query} onChange={e => {
+                  setQuery(e.target.value);
+                  setShowSuggestions(e.target.value.length > 0);
+                }} onKeyDown={e => {
+                  if (e.key === "Enter" && !isSearching) {
+                    handleSearch();
+                  } else if (e.key === "Escape") {
+                    setShowSuggestions(false);
+                  }
+                }} onFocus={() => setShowSuggestions(query.length > 0 || recentSearches.length > 0)} placeholder="Search the web with enhanced results..." disabled={isSearching} className="pl-12 pr-24 text-lg h-14 border-2 focus:border-primary transition-colors" />
+                  {!query && <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
                       <kbd className="hidden sm:inline-flex px-2 py-1 text-xs font-semibold text-muted-foreground bg-muted border border-border rounded shadow-sm">
                         {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}K
                       </kbd>
-                    </div>
-                  )}
-                  {query && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => {
-                        setQuery("");
-                        setShowSuggestions(false);
-                        inputRef.current?.focus();
-                      }}
-                      title="Clear (Esc)"
-                    >
+                    </div>}
+                  {query && <Button variant="ghost" size="sm" className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive" onClick={() => {
+                  setQuery("");
+                  setShowSuggestions(false);
+                  inputRef.current?.focus();
+                }} title="Clear (Esc)">
                       <X className="w-4 h-4" />
-                    </Button>
-                  )}
+                    </Button>}
                 </div>
               </div>
-              <Button 
-                onClick={() => handleSearch()} 
-                disabled={isSearching || !query.trim()}
-                size="lg"
-                className="h-14 px-8 text-base font-semibold shadow-lg hover:shadow-xl transition-shadow"
-              >
-              {isSearching ? (
-                  <>
+              <Button onClick={() => handleSearch()} disabled={isSearching || !query.trim()} size="lg" className="h-14 px-8 text-base font-semibold shadow-lg hover:shadow-xl transition-shadow">
+              {isSearching ? <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Searching...
-                  </>
-              ) : (
-                  <>
+                  </> : <>
                     <Search className="w-4 h-4 mr-2" />
                     Search
-                  </>
-              )}
+                  </>}
             </Button>
             </div>
 
             {/* Search Suggestions */}
-            {showSuggestions && (recentSearches.length > 0 || query.length > 0) && (
-              <Card className="absolute z-50 w-full mt-2 bg-card border-border shadow-xl">
-                {recentSearches.length > 0 && (
-                  <div className="p-3 border-b border-border">
+            {showSuggestions && (recentSearches.length > 0 || query.length > 0) && <Card className="absolute z-50 w-full mt-2 bg-card border-border shadow-xl">
+                {recentSearches.length > 0 && <div className="p-3 border-b border-border">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Clock className="w-4 h-4" />
                         <span className="font-medium">Recent Searches</span>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearRecentSearches}
-                        className="h-6 px-2 text-xs"
-                      >
+                      <Button variant="ghost" size="sm" onClick={clearRecentSearches} className="h-6 px-2 text-xs">
                         Clear
                       </Button>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {recentSearches.slice(0, 5).map((recent, idx) => (
-                        <Badge
-                          key={idx}
-                          variant="outline"
-                          className="cursor-pointer hover:bg-accent transition-colors"
-                          onClick={() => handleRecentSearchClick(recent)}
-                        >
+                      {recentSearches.slice(0, 5).map((recent, idx) => <Badge key={idx} variant="outline" className="cursor-pointer hover:bg-accent transition-colors" onClick={() => handleRecentSearchClick(recent)}>
                           {recent}
-                        </Badge>
-                      ))}
+                        </Badge>)}
                     </div>
-                  </div>
-                )}
-                {query.length > 0 && (
-                  <div className="p-2">
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => handleSearch()}
-                    >
+                  </div>}
+                {query.length > 0 && <div className="p-2">
+                    <Button variant="ghost" className="w-full justify-start" onClick={() => handleSearch()}>
                       <Search className="w-4 h-4 mr-2" />
                       Search for "{query}"
                     </Button>
-                  </div>
-                )}
-              </Card>
-            )}
+                  </div>}
+              </Card>}
           </div>
 
-          {lastQuery && !isSearching && results.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+          {lastQuery && !isSearching && results.length > 0 && <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
               <TrendingUp className="w-4 h-4 text-primary" />
               <span>Found <strong className="text-foreground">{results.length}</strong> results for <strong className="text-foreground">"{lastQuery}"</strong></span>
-            </div>
-          )}
+            </div>}
         </div>
       </Card>
 
-      {results.length > 0 && (
-        <div className="space-y-4">
+      {results.length > 0 && <div className="space-y-4">
           <AISearchSummary query={lastQuery} results={results} />
           <SearchResults results={results} query={lastQuery} />
-        </div>
-      )}
+        </div>}
 
-      {!isSearching && results.length === 0 && lastQuery && (
-        <Card className="p-12 bg-card/50 border-border">
+      {!isSearching && results.length === 0 && lastQuery && <Card className="p-12 bg-card/50 border-border">
           <div className="text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
               <Search className="w-8 h-8 text-muted-foreground" />
@@ -442,11 +358,9 @@ export const SearchTab = () => {
               </ul>
             </div>
           </div>
-        </Card>
-      )}
+        </Card>}
 
-      {!lastQuery && !isSearching && (
-        <Card className="p-12 bg-card/50 border-border">
+      {!lastQuery && !isSearching && <Card className="p-12 bg-card/50 border-border">
           <div className="text-center space-y-4">
             <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
               <Sparkles className="w-10 h-10 text-primary" />
@@ -481,8 +395,6 @@ export const SearchTab = () => {
               </div>
             </div>
           </div>
-        </Card>
-      )}
-    </div>
-  );
+        </Card>}
+    </div>;
 };
