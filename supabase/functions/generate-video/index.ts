@@ -6,21 +6,23 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Try Hugging Face text-to-video models
-async function tryHuggingFaceVideo(
+// Generate video using Hugging Face Stable Video Diffusion
+async function generateWithSVD(
   apiKey: string,
   prompt: string
-): Promise<{ success: boolean; videoUrl?: string; frames?: string[]; error?: string }> {
-  // Models to try in order (free tier compatible, smaller models)
+): Promise<{ success: boolean; frames?: string[]; error?: string }> {
+  // SVD models to try - these return frame sequences, NOT MP4
   const models = [
-    "ali-vilab/text-to-video-ms-1.7b", // Microsoft's text-to-video
-    "damo-vilab/text-to-video-ms-1.7b", // DAMO text-to-video  
-    "cerspense/zeroscope_v2_576w", // ZeroScope (lighter)
+    "stabilityai/stable-video-diffusion-img2vid-xt",
+    "stabilityai/stable-video-diffusion-img2vid",
+    "ali-vilab/text-to-video-ms-1.7b",
+    "damo-vilab/text-to-video-ms-1.7b",
+    "cerspense/zeroscope_v2_576w",
   ];
 
   for (const model of models) {
     try {
-      console.log(`[generate-video] Trying HuggingFace model: ${model}`);
+      console.log(`[generate-video] Trying HuggingFace SVD model: ${model}`);
       
       const response = await fetch(
         `https://api-inference.huggingface.co/models/${model}`,
@@ -35,69 +37,121 @@ async function tryHuggingFaceVideo(
             parameters: {
               num_frames: 24,
               num_inference_steps: 25,
+              fps: 8,
             },
           }),
         }
       );
 
+      const contentType = response.headers.get("content-type") || "";
+      console.log(`[generate-video] ${model} response status: ${response.status}, content-type: ${contentType}`);
+
       if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
+        // SVD returns frame sequences - handle various output formats
         
-        if (contentType.includes("video") || contentType.includes("mp4")) {
-          // Got actual video - encode to base64 data URL
-          const videoBytes = new Uint8Array(await response.arrayBuffer());
+        // Case 1: Binary image/video data (GIF or frame sequence)
+        if (contentType.includes("image") || contentType.includes("video") || contentType.includes("octet-stream")) {
+          const bytes = new Uint8Array(await response.arrayBuffer());
           let binary = '';
           const chunkSize = 8192;
-          for (let i = 0; i < videoBytes.length; i += chunkSize) {
-            const chunk = videoBytes.subarray(i, i + chunkSize);
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
             binary += String.fromCharCode.apply(null, Array.from(chunk));
           }
-          const videoUrl = `data:video/mp4;base64,${btoa(binary)}`;
-          console.log(`[generate-video] HuggingFace ${model} returned video!`);
-          return { success: true, videoUrl };
-        } else if (contentType.includes("image")) {
-          // Some models return GIF or image sequence
-          const imageBytes = new Uint8Array(await response.arrayBuffer());
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < imageBytes.length; i += chunkSize) {
-            const chunk = imageBytes.subarray(i, i + chunkSize);
-            binary += String.fromCharCode.apply(null, Array.from(chunk));
+          
+          // Determine format from content-type or magic bytes
+          let mimeType = "image/gif";
+          if (contentType.includes("mp4") || contentType.includes("video")) {
+            mimeType = "video/mp4";
+          } else if (contentType.includes("webp")) {
+            mimeType = "image/webp";
+          } else if (contentType.includes("png")) {
+            mimeType = "image/png";
           }
-          const imageUrl = `data:image/gif;base64,${btoa(binary)}`;
-          console.log(`[generate-video] HuggingFace ${model} returned image/gif`);
-          return { success: true, frames: [imageUrl] };
-        } else {
-          // Try to parse as JSON (might contain URL)
-          try {
-            const json = await response.json();
-            if (json.video_url || json.url) {
-              return { success: true, videoUrl: json.video_url || json.url };
+          
+          const dataUrl = `data:${mimeType};base64,${btoa(binary)}`;
+          console.log(`[generate-video] ${model} returned binary data as ${mimeType}`);
+          return { success: true, frames: [dataUrl] };
+        }
+        
+        // Case 2: JSON response with frames array or tensor data
+        if (contentType.includes("json")) {
+          const json = await response.json();
+          console.log(`[generate-video] ${model} returned JSON:`, Object.keys(json));
+          
+          // Handle array of frame URLs
+          if (Array.isArray(json)) {
+            const frames = json.map((item: any) => {
+              if (typeof item === "string") return item;
+              if (item.url) return item.url;
+              if (item.image) return item.image;
+              if (item.frame) return item.frame;
+              return null;
+            }).filter(Boolean);
+            
+            if (frames.length > 0) {
+              console.log(`[generate-video] ${model} returned ${frames.length} frames`);
+              return { success: true, frames };
             }
-          } catch {
-            // Not JSON
           }
+          
+          // Handle object with frames/video property
+          if (json.frames && Array.isArray(json.frames)) {
+            console.log(`[generate-video] ${model} returned ${json.frames.length} frames in object`);
+            return { success: true, frames: json.frames };
+          }
+          
+          if (json.video_url || json.url) {
+            return { success: true, frames: [json.video_url || json.url] };
+          }
+          
+          // Handle base64 encoded frames
+          if (json.images && Array.isArray(json.images)) {
+            const frames = json.images.map((img: string) => 
+              img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+            );
+            return { success: true, frames };
+          }
+        }
+        
+        // Case 3: Try to read as raw binary anyway
+        try {
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          if (bytes.length > 100) {
+            let binary = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+              const chunk = bytes.subarray(i, i + chunkSize);
+              binary += String.fromCharCode.apply(null, Array.from(chunk));
+            }
+            const dataUrl = `data:image/gif;base64,${btoa(binary)}`;
+            console.log(`[generate-video] ${model} returned raw binary, treating as GIF`);
+            return { success: true, frames: [dataUrl] };
+          }
+        } catch {
+          // Ignore parsing errors
         }
       } else {
         const errorText = await response.text().catch(() => "");
-        console.log(`[generate-video] HuggingFace ${model} failed: ${response.status} ${errorText.substring(0, 200)}`);
+        console.log(`[generate-video] ${model} failed: ${response.status} ${errorText.substring(0, 300)}`);
         
-        // If model is loading, wait and retry once
+        // If model is loading, wait and retry
         if (response.status === 503 && errorText.includes("loading")) {
           console.log(`[generate-video] Model ${model} is loading, waiting 20s...`);
           await new Promise(r => setTimeout(r, 20000));
-          continue; // Retry this model
+          // Don't continue to next model, retry this one
+          continue;
         }
       }
     } catch (error) {
-      console.error(`[generate-video] HuggingFace ${model} error:`, error);
+      console.error(`[generate-video] ${model} error:`, error);
     }
   }
 
-  return { success: false, error: "No HuggingFace video models available" };
+  return { success: false, error: "No HuggingFace SVD models available" };
 }
 
-// Fallback: Generate SDXL frames with maximum consistency
+// Fallback: Generate SDXL frames for animation
 async function generateSDXLFrames(
   accountId: string,
   apiToken: string,
@@ -105,8 +159,6 @@ async function generateSDXLFrames(
   frameCount: number
 ): Promise<string[]> {
   const frames: string[] = [];
-  
-  // Generate frames in batches to avoid overwhelming the API
   const batchSize = 8;
   const batches = Math.ceil(frameCount / batchSize);
   
@@ -122,7 +174,7 @@ async function generateSDXLFrames(
     const batchResults = await Promise.all(batchPromises);
     frames.push(...batchResults.filter((f): f is string => f !== null));
     
-    console.log(`[generate-video] Batch ${batch + 1}/${batches} complete, ${frames.length} frames total`);
+    console.log(`[generate-video] SDXL batch ${batch + 1}/${batches} complete, ${frames.length} frames`);
   }
   
   return frames;
@@ -139,7 +191,6 @@ async function generateSingleFrame(
     const progressPercent = ((frameNumber / (totalFrames - 1)) * 100).toFixed(1);
     const basePrompt = (prompt ?? "").toString().trim().slice(0, 500);
     
-    // Motion phrase for this frame
     const motionPhrase = frameNumber === 0
       ? "frozen starting position, 0% motion"
       : `${progressPercent}% through motion, tiny incremental change`;
@@ -163,8 +214,7 @@ async function generateSingleFrame(
     );
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status, errText.substring(0, 200));
+      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status);
       return null;
     }
 
@@ -178,7 +228,7 @@ async function generateSingleFrame(
     
     return `data:image/png;base64,${btoa(binary)}`;
   } catch (error) {
-    console.error(`[generate-video] Frame ${frameNumber + 1} generation failed:`, error);
+    console.error(`[generate-video] Frame ${frameNumber + 1} failed:`, error);
     return null;
   }
 }
@@ -198,41 +248,42 @@ serve(async (req) => {
       );
     }
 
-    console.log("[generate-video] Generating video for:", prompt.substring(0, 100));
+    console.log("[generate-video] Generating video with SVD for:", prompt.substring(0, 100));
 
     const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
     const CLOUDFLARE_API_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
 
-    // Try HuggingFace video models first
+    // Try HuggingFace Stable Video Diffusion first
     if (HUGGINGFACE_API_KEY) {
-      console.log("[generate-video] Attempting HuggingFace video generation...");
-      const hfResult = await tryHuggingFaceVideo(HUGGINGFACE_API_KEY, prompt);
+      console.log("[generate-video] Using HuggingFace Stable Video Diffusion...");
+      const svdResult = await generateWithSVD(HUGGINGFACE_API_KEY, prompt);
       
-      if (hfResult.success) {
+      if (svdResult.success && svdResult.frames && svdResult.frames.length > 0) {
+        console.log(`[generate-video] SVD success with ${svdResult.frames.length} frames`);
         return new Response(
           JSON.stringify({
-            videoUrl: hfResult.videoUrl || hfResult.frames?.[0],
-            frames: hfResult.frames,
-            type: hfResult.videoUrl ? "video" : "animated-sequence",
-            model: "huggingface-video",
-            quality: "high",
+            frames: svdResult.frames,
+            type: "frame-sequence",
+            model: "huggingface-svd",
+            frameCount: svdResult.frames.length,
             fps: 8,
-            duration: 3,
+            duration: svdResult.frames.length / 8,
+            quality: "high",
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      console.log("[generate-video] HuggingFace video failed, falling back to SDXL frames");
+      console.log("[generate-video] SVD failed, falling back to SDXL frames");
     }
 
     // Fallback to SDXL frame generation
     if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-      throw new Error("Neither HuggingFace video nor Cloudflare SDXL is configured");
+      throw new Error("Neither HuggingFace SVD nor Cloudflare SDXL is configured");
     }
 
     const numFrames = Math.min(Math.max(frameCount, 8), 40);
-    console.log(`[generate-video] Generating ${numFrames} SDXL frames...`);
+    console.log(`[generate-video] Generating ${numFrames} SDXL frames as fallback...`);
 
     const frames = await generateSDXLFrames(
       CLOUDFLARE_ACCOUNT_ID,
@@ -245,17 +296,16 @@ serve(async (req) => {
       throw new Error("Failed to generate any frames");
     }
 
-    console.log(`[generate-video] Successfully generated ${frames.length}/${numFrames} frames`);
+    console.log(`[generate-video] SDXL generated ${frames.length}/${numFrames} frames`);
 
     return new Response(
       JSON.stringify({
-        videoUrl: frames[0],
         frames: frames,
-        type: "animated-sequence",
+        type: "frame-sequence",
+        model: "sdxl-fallback",
         frameCount: frames.length,
         fps: 8,
         duration: frames.length / 8,
-        model: "sdxl-1.0",
         quality: "high",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
