@@ -7,6 +7,9 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import StudyMode from "./pages/StudyMode";
+import AboutUs from "./pages/AboutUs";
+import TermsOfUse from "./pages/TermsOfUse";
+import UseCases from "./pages/UseCases";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +25,9 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/study" element={<StudyMode />} />
+            <Route path="/about" element={<AboutUs />} />
+            <Route path="/terms" element={<TermsOfUse />} />
+            <Route path="/use-cases" element={<UseCases />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
