@@ -6,6 +6,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const HF_ROUTER_BASE = "https://router.huggingface.co/hf-inference/models";
+const hfModelUrl = (model: string) => `${HF_ROUTER_BASE}/${model}`;
+
 // Convert binary buffer to base64 data URL
 function bufferToDataUrl(bytes: Uint8Array, mimeType: string): string {
   let binary = '';
@@ -60,7 +63,7 @@ async function tryMochi(apiKey: string, prompt: string): Promise<{ success: bool
       console.log(`[generate-video] Trying Mochi model: ${model}`);
       
       const response = await fetch(
-        `https://api-inference.huggingface.co/models/${model}`,
+        hfModelUrl(model),
         {
           method: "POST",
           headers: {
@@ -87,6 +90,12 @@ async function tryMochi(apiKey: string, prompt: string): Promise<{ success: bool
       
       if (response.ok) {
         const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+          const errorText = await response.text().catch(() => "");
+          console.log(`[generate-video] Mochi ${model} returned JSON: ${errorText.substring(0, 150)}`);
+          continue;
+        }
         const bytes = new Uint8Array(await response.arrayBuffer());
         
         if (bytes.length > 1000) {
@@ -148,7 +157,7 @@ async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfTo
     try {
       console.log("[generate-video] Trying HuggingFace SDXL for base image...");
       const imgResponse = await fetch(
-        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+        hfModelUrl("stabilityai/stable-diffusion-xl-base-1.0"),
         {
           method: "POST",
           headers: {
@@ -184,21 +193,22 @@ async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfTo
       console.log(`[generate-video] Trying SVD model: ${model}`);
       
       // Convert image bytes to base64 for SVD input
-      const imageBase64 = bufferToDataUrl(baseImageBytes, "image/png");
+      const imageDataUrl = bufferToDataUrl(baseImageBytes, "image/png");
+      const imagePureBase64 = imageDataUrl.split(",")[1] || imageDataUrl;
       
-      const response = await fetch(
-        `https://api-inference.huggingface.co/models/${model}`,
-        {
+      const tryOnce = async (inputs: string) =>
+        await fetch(hfModelUrl(model), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            inputs: imageBase64,
-          }),
-        }
-      );
+          body: JSON.stringify({ inputs }),
+        });
+
+      // Some pipelines accept full data URLs, others want the raw base64 string.
+      let response = await tryOnce(imageDataUrl);
+      if (!response.ok) response = await tryOnce(imagePureBase64);
       
       console.log(`[generate-video] SVD ${model} status: ${response.status}`);
       
@@ -214,6 +224,12 @@ async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfTo
       
       if (response.ok) {
         const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+          const errorText = await response.text().catch(() => "");
+          console.log(`[generate-video] SVD ${model} returned JSON: ${errorText.substring(0, 150)}`);
+          continue;
+        }
         const bytes = new Uint8Array(await response.arrayBuffer());
         
         if (bytes.length > 1000) {
@@ -231,10 +247,9 @@ async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfTo
     }
   }
   
-  // If SVD fails, return the base image as a fallback
-  console.log("[generate-video] SVD failed, returning base image as fallback");
-  const fallbackUrl = bufferToDataUrl(baseImageBytes, "image/png");
-  return { success: true, dataUrl: fallbackUrl };
+  // If SVD fails, do NOT return a 1-frame fallback (users expect a real video)
+  console.log("[generate-video] SVD failed; skipping 1-frame fallback");
+  return { success: false, error: "SVD failed to generate a video" };
 }
 
 // Try other text-to-video models as additional fallback
@@ -251,7 +266,7 @@ async function tryOtherT2V(apiKey: string, prompt: string): Promise<{ success: b
       console.log(`[generate-video] Trying T2V model: ${model}`);
       
       const response = await fetch(
-        `https://api-inference.huggingface.co/models/${model}`,
+        hfModelUrl(model),
         {
           method: "POST",
           headers: {
@@ -276,6 +291,12 @@ async function tryOtherT2V(apiKey: string, prompt: string): Promise<{ success: b
       
       if (response.ok) {
         const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+          const errorText = await response.text().catch(() => "");
+          console.log(`[generate-video] ${model} returned JSON: ${errorText.substring(0, 150)}`);
+          continue;
+        }
         const bytes = new Uint8Array(await response.arrayBuffer());
         
         if (bytes.length > 1000) {

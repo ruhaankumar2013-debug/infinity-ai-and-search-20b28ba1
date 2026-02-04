@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ModelSelector } from "@/components/ModelSelector";
+import { SiteNav } from "@/components/SiteNav";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -531,6 +532,8 @@ const StudyMode = () => {
                 <h1 className="text-2xl font-bold">Study Mode</h1>
               </div>
             </div>
+
+            <SiteNav className="hidden lg:flex" />
             
             <div className="flex items-center gap-2">
               <Button
@@ -607,6 +610,13 @@ const StudyMode = () => {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              {/* Compact nav for smaller screens */}
+              <div className="lg:hidden">
+                <Button variant="ghost" size="sm" onClick={() => navigate("/about")}>About</Button>
+                <Button variant="ghost" size="sm" onClick={() => navigate("/terms")}>Terms</Button>
+                <Button variant="ghost" size="sm" onClick={() => navigate("/use-cases")}>Use Cases</Button>
+              </div>
             </div>
           </div>
 

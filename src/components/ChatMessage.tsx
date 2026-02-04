@@ -77,8 +77,21 @@ const AnimatedFramePlayer = ({ frames, fps = 8 }: { frames: string[]; fps?: numb
   );
 };
 
+const VideoPlayer = ({ src }: { src: string }) => {
+  return (
+    <video
+      src={src}
+      controls
+      playsInline
+      className="rounded-lg max-w-full h-auto shadow-lg"
+    />
+  );
+};
+
 export const ChatMessage = ({ role, content, imageUrl, frames, isStreaming = false }: ChatMessageProps) => {
   const hasFrames = frames && frames.length > 0;
+  const firstFrame = hasFrames ? frames![0] : undefined;
+  const isVideoDataUrl = !!firstFrame && /^data:video\//i.test(firstFrame);
   
   return (
     <div
@@ -110,7 +123,11 @@ export const ChatMessage = ({ role, content, imageUrl, frames, isStreaming = fal
         ) : null}
         {hasFrames ? (
           <div className="mt-3">
-            <AnimatedFramePlayer frames={frames} fps={8} />
+            {isVideoDataUrl ? (
+              <VideoPlayer src={firstFrame!} />
+            ) : (
+              <AnimatedFramePlayer frames={frames!} fps={8} />
+            )}
           </div>
         ) : imageUrl ? (
           <div className="mt-3">
