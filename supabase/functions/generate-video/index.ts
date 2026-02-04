@@ -6,18 +6,246 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Try HuggingFace text-to-video and image-to-video models
-async function tryHuggingFaceVideo(
-  apiKey: string,
-  prompt: string
-): Promise<{ success: boolean; frames?: string[]; error?: string }> {
-  // Updated 2025 models - try text-to-video first
+// Convert binary buffer to base64 data URL
+function bufferToDataUrl(bytes: Uint8Array, mimeType: string): string {
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+// Detect content type from response or bytes
+function detectContentType(contentType: string, bytes: Uint8Array): string {
+  if (contentType.includes("mp4")) return "video/mp4";
+  if (contentType.includes("webm")) return "video/webm";
+  if (contentType.includes("gif")) return "image/gif";
+  if (contentType.includes("png")) return "image/png";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "image/jpeg";
+  
+  // Check magic bytes
+  if (bytes.length >= 4) {
+    // MP4: starts with ftyp
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+      return "video/mp4";
+    }
+    // WebM: starts with 0x1A 0x45 0xDF 0xA3
+    if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) {
+      return "video/webm";
+    }
+    // GIF: starts with GIF
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+      return "image/gif";
+    }
+    // PNG: starts with 0x89 PNG
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+      return "image/png";
+    }
+  }
+  
+  return "video/mp4"; // Default
+}
+
+// Try Mochi 1 Preview - text-to-video model
+async function tryMochi(apiKey: string, prompt: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  const mochiModels = [
+    "genmo/mochi-1-preview",
+    "Genmo/Mochi-1-preview"
+  ];
+  
+  for (const model of mochiModels) {
+    try {
+      console.log(`[generate-video] Trying Mochi model: ${model}`);
+      
+      const response = await fetch(
+        `https://api-inference.huggingface.co/models/${model}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: prompt,
+          }),
+        }
+      );
+      
+      console.log(`[generate-video] Mochi ${model} status: ${response.status}`);
+      
+      if (response.status === 503) {
+        const errorText = await response.text().catch(() => "");
+        console.log(`[generate-video] Mochi loading: ${errorText.substring(0, 100)}`);
+        if (errorText.includes("loading")) {
+          console.log("[generate-video] Waiting 30s for Mochi to load...");
+          await new Promise(r => setTimeout(r, 30000));
+          continue;
+        }
+      }
+      
+      if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        
+        if (bytes.length > 1000) {
+          const mimeType = detectContentType(contentType, bytes);
+          const dataUrl = bufferToDataUrl(bytes, mimeType);
+          console.log(`[generate-video] Mochi success: ${bytes.length} bytes, type: ${mimeType}`);
+          return { success: true, dataUrl };
+        }
+      }
+      
+      const errorText = await response.text().catch(() => "");
+      console.log(`[generate-video] Mochi ${model} error: ${errorText.substring(0, 150)}`);
+    } catch (error) {
+      console.error(`[generate-video] Mochi ${model} exception:`, error);
+    }
+  }
+  
+  return { success: false, error: "Mochi models unavailable" };
+}
+
+// Try Stable Video Diffusion (image-to-video) - generate image first then animate
+async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfToken?: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
+  console.log("[generate-video] Trying SVD pipeline...");
+  
+  // First generate a base image
+  let baseImageBytes: Uint8Array | null = null;
+  
+  // Try Cloudflare SDXL for base image
+  if (cfAccountId && cfToken) {
+    try {
+      console.log("[generate-video] Generating base image with Cloudflare SDXL...");
+      const imgResponse = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${cfToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            prompt: prompt,
+            num_steps: 20,
+            guidance: 7.5,
+          }),
+        }
+      );
+      
+      if (imgResponse.ok) {
+        baseImageBytes = new Uint8Array(await imgResponse.arrayBuffer());
+        console.log(`[generate-video] Base image generated: ${baseImageBytes.length} bytes`);
+      }
+    } catch (error) {
+      console.error("[generate-video] Cloudflare SDXL error:", error);
+    }
+  }
+  
+  // Fallback: try HuggingFace SDXL for base image
+  if (!baseImageBytes) {
+    try {
+      console.log("[generate-video] Trying HuggingFace SDXL for base image...");
+      const imgResponse = await fetch(
+        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ inputs: prompt }),
+        }
+      );
+      
+      if (imgResponse.ok) {
+        baseImageBytes = new Uint8Array(await imgResponse.arrayBuffer());
+        console.log(`[generate-video] HF SDXL base image: ${baseImageBytes.length} bytes`);
+      }
+    } catch (error) {
+      console.error("[generate-video] HuggingFace SDXL error:", error);
+    }
+  }
+  
+  if (!baseImageBytes || baseImageBytes.length < 1000) {
+    return { success: false, error: "Could not generate base image for SVD" };
+  }
+  
+  // Now try SVD models to animate the image
+  const svdModels = [
+    "stabilityai/stable-video-diffusion-img2vid-xt",
+    "stabilityai/stable-video-diffusion-img2vid",
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1"
+  ];
+  
+  for (const model of svdModels) {
+    try {
+      console.log(`[generate-video] Trying SVD model: ${model}`);
+      
+      // Convert image bytes to base64 for SVD input
+      const imageBase64 = bufferToDataUrl(baseImageBytes, "image/png");
+      
+      const response = await fetch(
+        `https://api-inference.huggingface.co/models/${model}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: imageBase64,
+          }),
+        }
+      );
+      
+      console.log(`[generate-video] SVD ${model} status: ${response.status}`);
+      
+      if (response.status === 503) {
+        const errorText = await response.text().catch(() => "");
+        console.log(`[generate-video] SVD loading: ${errorText.substring(0, 100)}`);
+        if (errorText.includes("loading")) {
+          console.log("[generate-video] Waiting 30s for SVD to load...");
+          await new Promise(r => setTimeout(r, 30000));
+          continue;
+        }
+      }
+      
+      if (response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        
+        if (bytes.length > 1000) {
+          const mimeType = detectContentType(contentType, bytes);
+          const dataUrl = bufferToDataUrl(bytes, mimeType);
+          console.log(`[generate-video] SVD success: ${bytes.length} bytes, type: ${mimeType}`);
+          return { success: true, dataUrl };
+        }
+      }
+      
+      const errorText = await response.text().catch(() => "");
+      console.log(`[generate-video] SVD ${model} error: ${errorText.substring(0, 150)}`);
+    } catch (error) {
+      console.error(`[generate-video] SVD ${model} exception:`, error);
+    }
+  }
+  
+  // If SVD fails, return the base image as a fallback
+  console.log("[generate-video] SVD failed, returning base image as fallback");
+  const fallbackUrl = bufferToDataUrl(baseImageBytes, "image/png");
+  return { success: true, dataUrl: fallbackUrl };
+}
+
+// Try other text-to-video models as additional fallback
+async function tryOtherT2V(apiKey: string, prompt: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
   const t2vModels = [
     "Wan-AI/Wan2.1-T2V-1.3B",
     "ByteDance/AnimateDiff-Lightning",
     "hotshotco/Hotshot-XL",
+    "ali-vilab/text-to-video-ms-1.7b"
   ];
-
+  
   for (const model of t2vModels) {
     try {
       console.log(`[generate-video] Trying T2V model: ${model}`);
@@ -35,129 +263,34 @@ async function tryHuggingFaceVideo(
           }),
         }
       );
-
+      
       console.log(`[generate-video] ${model} status: ${response.status}`);
-
+      
+      if (response.status === 503) {
+        const errorText = await response.text().catch(() => "");
+        if (errorText.includes("loading")) {
+          console.log(`[generate-video] ${model} loading, skipping...`);
+          continue;
+        }
+      }
+      
       if (response.ok) {
         const contentType = response.headers.get("content-type") || "";
         const bytes = new Uint8Array(await response.arrayBuffer());
         
         if (bytes.length > 1000) {
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            const chunk = bytes.subarray(i, i + chunkSize);
-            binary += String.fromCharCode.apply(null, Array.from(chunk));
-          }
-          
-          let mimeType = "video/mp4";
-          if (contentType.includes("gif")) mimeType = "image/gif";
-          else if (contentType.includes("webm")) mimeType = "video/webm";
-          
-          const dataUrl = `data:${mimeType};base64,${btoa(binary)}`;
-          console.log(`[generate-video] ${model} success: ${bytes.length} bytes`);
-          return { success: true, frames: [dataUrl] };
-        }
-      } else {
-        const errorText = await response.text().catch(() => "");
-        console.log(`[generate-video] ${model} failed: ${response.status} - ${errorText.substring(0, 150)}`);
-        
-        // Wait if model is loading
-        if (response.status === 503 && errorText.includes("loading")) {
-          console.log(`[generate-video] ${model} loading, waiting 20s...`);
-          await new Promise(r => setTimeout(r, 20000));
+          const mimeType = detectContentType(contentType, bytes);
+          const dataUrl = bufferToDataUrl(bytes, mimeType);
+          console.log(`[generate-video] ${model} success: ${bytes.length} bytes, type: ${mimeType}`);
+          return { success: true, dataUrl };
         }
       }
     } catch (error) {
-      console.error(`[generate-video] ${model} error:`, error);
+      console.error(`[generate-video] ${model} exception:`, error);
     }
-  }
-
-  return { success: false, error: "HuggingFace video models unavailable" };
-}
-
-// Cloudflare SDXL frame generation fallback - reliable and always works
-async function generateSDXLFrames(
-  accountId: string,
-  apiToken: string,
-  prompt: string,
-  frameCount: number
-): Promise<string[]> {
-  const frames: string[] = [];
-  const batchSize = 8;
-  const batches = Math.ceil(frameCount / batchSize);
-  
-  for (let batch = 0; batch < batches; batch++) {
-    const startIdx = batch * batchSize;
-    const endIdx = Math.min(startIdx + batchSize, frameCount);
-    
-    const batchPromises = [];
-    for (let i = startIdx; i < endIdx; i++) {
-      batchPromises.push(generateSingleFrame(accountId, apiToken, prompt, i, frameCount));
-    }
-    
-    const batchResults = await Promise.all(batchPromises);
-    frames.push(...batchResults.filter((f): f is string => f !== null));
-    
-    console.log(`[generate-video] SDXL batch ${batch + 1}/${batches} complete, ${frames.length} frames`);
   }
   
-  return frames;
-}
-
-async function generateSingleFrame(
-  accountId: string,
-  apiToken: string,
-  prompt: string,
-  frameNumber: number,
-  totalFrames: number
-): Promise<string | null> {
-  try {
-    const progressPercent = ((frameNumber / (totalFrames - 1)) * 100).toFixed(1);
-    const basePrompt = (prompt ?? "").toString().trim().slice(0, 500);
-    
-    // Motion phrase for temporal consistency
-    const motionPhrase = frameNumber === 0
-      ? "frozen starting position, 0% motion"
-      : `${progressPercent}% through motion, tiny incremental change`;
-    
-    const enhancedPrompt = `${basePrompt}, ${motionPhrase}, frame ${frameNumber + 1} of ${totalFrames}, identical scene, consistent lighting, photorealistic, 8k`;
-
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: enhancedPrompt,
-          num_steps: 20,
-          guidance: 7.5,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => "");
-      console.error(`[generate-video] SDXL frame ${frameNumber + 1} error:`, response.status, errText.substring(0, 100));
-      return null;
-    }
-
-    const imageBytes = new Uint8Array(await response.arrayBuffer());
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < imageBytes.length; i += chunkSize) {
-      const chunk = imageBytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    
-    return `data:image/png;base64,${btoa(binary)}`;
-  } catch (error) {
-    console.error(`[generate-video] Frame ${frameNumber + 1} failed:`, error);
-    return null;
-  }
+  return { success: false, error: "No T2V models available" };
 }
 
 serve(async (req) => {
@@ -166,7 +299,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, frameCount = 24 } = await req.json();
+    const { prompt } = await req.json();
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return new Response(
@@ -181,59 +314,67 @@ serve(async (req) => {
     const CLOUDFLARE_ACCOUNT_ID = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
     const CLOUDFLARE_API_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
 
-    // Try HuggingFace video models first
-    if (HUGGINGFACE_API_KEY) {
-      console.log("[generate-video] Trying HuggingFace video models...");
-      const hfResult = await tryHuggingFaceVideo(HUGGINGFACE_API_KEY, prompt);
-      
-      if (hfResult.success && hfResult.frames) {
-        return new Response(
-          JSON.stringify({
-            frames: hfResult.frames,
-            type: "video",
-            model: "huggingface-video",
-            fps: 8,
-            quality: "high",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      console.log("[generate-video] HuggingFace failed, using Cloudflare SDXL fallback");
+    if (!HUGGINGFACE_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "Video generation not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Fallback to Cloudflare SDXL frame generation (reliable)
-    if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-      throw new Error("No video generation backend configured");
+    // 1. Try Mochi 1 Preview first (best text-to-video)
+    console.log("[generate-video] Step 1: Trying Mochi 1 Preview...");
+    const mochiResult = await tryMochi(HUGGINGFACE_API_KEY, prompt);
+    if (mochiResult.success && mochiResult.dataUrl) {
+      return new Response(
+        JSON.stringify({
+          frames: [mochiResult.dataUrl],
+          type: "video",
+          model: "mochi-1-preview",
+          fps: 24,
+          quality: "high",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+    console.log("[generate-video] Mochi failed:", mochiResult.error);
 
-    const numFrames = Math.min(Math.max(frameCount, 8), 40);
-    console.log(`[generate-video] Generating ${numFrames} SDXL frames...`);
-
-    const frames = await generateSDXLFrames(
-      CLOUDFLARE_ACCOUNT_ID,
-      CLOUDFLARE_API_TOKEN,
-      prompt,
-      numFrames
-    );
-
-    if (frames.length === 0) {
-      throw new Error("Failed to generate any frames");
+    // 2. Try SVD pipeline (image-to-video)
+    console.log("[generate-video] Step 2: Trying SVD pipeline...");
+    const svdResult = await trySVD(HUGGINGFACE_API_KEY, prompt, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN);
+    if (svdResult.success && svdResult.dataUrl) {
+      const isVideo = svdResult.dataUrl.includes("video/");
+      return new Response(
+        JSON.stringify({
+          frames: [svdResult.dataUrl],
+          type: isVideo ? "video" : "image",
+          model: isVideo ? "stable-video-diffusion" : "sdxl-fallback",
+          fps: isVideo ? 14 : 1,
+          quality: "high",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+    console.log("[generate-video] SVD failed:", svdResult.error);
 
-    console.log(`[generate-video] Generated ${frames.length}/${numFrames} frames successfully`);
+    // 3. Try other T2V models
+    console.log("[generate-video] Step 3: Trying other T2V models...");
+    const t2vResult = await tryOtherT2V(HUGGINGFACE_API_KEY, prompt);
+    if (t2vResult.success && t2vResult.dataUrl) {
+      return new Response(
+        JSON.stringify({
+          frames: [t2vResult.dataUrl],
+          type: "video",
+          model: "huggingface-t2v",
+          fps: 8,
+          quality: "medium",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    console.log("[generate-video] T2V failed:", t2vResult.error);
 
-    return new Response(
-      JSON.stringify({
-        frames: frames,
-        type: "frame-sequence",
-        model: "cloudflare-sdxl",
-        frameCount: frames.length,
-        fps: 8,
-        duration: frames.length / 8,
-        quality: "high",
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    // All methods failed
+    throw new Error("All video generation methods failed. Please try again later.");
   } catch (error) {
     console.error("[generate-video] Error:", error);
     return new Response(
