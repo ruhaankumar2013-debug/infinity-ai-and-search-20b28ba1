@@ -14,6 +14,7 @@ import { ModelSelector } from "@/components/ModelSelector";
 import { SearchTab } from "@/components/SearchTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import logo from "@/assets/logo.png";
+import { SiteNav } from "@/components/SiteNav";
 import type { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import { z } from "zod";
 interface Message {
@@ -827,6 +828,8 @@ const Index = () => {
             <span className="text-xl font-semibold text-foreground">Infinity AI</span>
           </button>
 
+          <SiteNav className="hidden md:flex" />
+
           <div className="flex items-center gap-3">
             {user ? <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground hidden sm:block">{user.email}</span>
@@ -968,6 +971,7 @@ const Index = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <SiteNav className="hidden lg:flex mr-2" />
               <Button variant={viewMode === "chat" ? "default" : "ghost"} size="sm" onClick={enterChatMode}>
                 <MessageSquare className="w-4 h-4 mr-2" />
                 Chat
