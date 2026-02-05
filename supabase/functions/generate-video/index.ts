@@ -6,7 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const HF_INFERENCE_API = "https://api-inference.huggingface.co/models";
+// Use the new HuggingFace router endpoint
+const HF_ROUTER_BASE = "https://router.huggingface.co/hf-inference/models";
 
 // Wan 2.1 model - text-to-video
 const WAN_MODEL = "Wan-AI/Wan2.1-T2V-14B";
@@ -63,7 +64,7 @@ async function generateWithWan(
   maxRetries: number = 5
 ): Promise<{ success: boolean; dataUrl?: string; error?: string; estimatedTime?: number }> {
   
-  const url = `${HF_INFERENCE_API}/${WAN_MODEL}`;
+  const url = `${HF_ROUTER_BASE}/${WAN_MODEL}`;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     console.log(`[generate-video] Wan 2.1 attempt ${attempt}/${maxRetries}`);
