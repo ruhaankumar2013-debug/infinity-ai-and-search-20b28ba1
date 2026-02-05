@@ -252,66 +252,91 @@ async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfTo
   return { success: false, error: "SVD failed to generate a video" };
 }
 
-// Try other text-to-video models as additional fallback
-async function tryOtherT2V(apiKey: string, prompt: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-  const t2vModels = [
-    "Wan-AI/Wan2.1-T2V-1.3B",
-    "ByteDance/AnimateDiff-Lightning",
-    "hotshotco/Hotshot-XL",
-    "ali-vilab/text-to-video-ms-1.7b"
-  ];
+// Generate coherent frame sequence (40 frames) using Cloudflare img2img with tiny strength
+async function generateCoherentFrames(
+  cfAccountId: string,
+  cfToken: string,
+  prompt: string,
+  frameCount: number = 40
+): Promise<{ success: boolean; frames?: string[]; error?: string }> {
+  console.log(`[generate-video] Generating ${frameCount} coherent frames via img2img...`);
   
-  for (const model of t2vModels) {
-    try {
-      console.log(`[generate-video] Trying T2V model: ${model}`);
+  // 1. Generate base image
+  try {
+    const baseResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cfToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+          num_steps: 20,
+          guidance: 7.5,
+        }),
+      }
+    );
+    
+    if (!baseResponse.ok) {
+      return { success: false, error: "Failed to generate base image" };
+    }
+    
+    const baseBytes = new Uint8Array(await baseResponse.arrayBuffer());
+    const baseB64 = bufferToDataUrl(baseBytes, "image/png").split(",")[1] || "";
+    console.log(`[generate-video] Base image: ${baseBytes.length} bytes`);
+    
+    const frames: string[] = [bufferToDataUrl(baseBytes, "image/png")];
+    
+    let currentImageB64 = baseB64;
+    
+    // 2. Generate subsequent frames with tiny transformations
+    for (let i = 1; i < frameCount; i++) {
+      const strength = 0.05 + (Math.random() * 0.03); // 0.05-0.08 for subtle motion
+      const framePrompt = prompt + ", subtle gentle motion, cinematic";
       
-      const response = await fetch(
-        hfModelUrl(model),
+      const frameResponse = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${apiKey}`,
+            Authorization: `Bearer ${cfToken}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            inputs: prompt,
+            prompt: framePrompt,
+            image_b64: currentImageB64,
+            strength,
+            num_steps: 15,
+            guidance: 7.5,
           }),
         }
       );
       
-      console.log(`[generate-video] ${model} status: ${response.status}`);
-      
-      if (response.status === 503) {
-        const errorText = await response.text().catch(() => "");
-        if (errorText.includes("loading")) {
-          console.log(`[generate-video] ${model} loading, skipping...`);
-          continue;
-        }
+      if (!frameResponse.ok) {
+        console.log(`[generate-video] Frame ${i + 1} failed: ${frameResponse.status}`);
+        continue; // Skip failed frames
       }
       
-      if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
-
-        if (contentType.includes("application/json")) {
-          const errorText = await response.text().catch(() => "");
-          console.log(`[generate-video] ${model} returned JSON: ${errorText.substring(0, 150)}`);
-          continue;
-        }
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        
-        if (bytes.length > 1000) {
-          const mimeType = detectContentType(contentType, bytes);
-          const dataUrl = bufferToDataUrl(bytes, mimeType);
-          console.log(`[generate-video] ${model} success: ${bytes.length} bytes, type: ${mimeType}`);
-          return { success: true, dataUrl };
-        }
+      const frameBytes = new Uint8Array(await frameResponse.arrayBuffer());
+      const frameDataUrl = bufferToDataUrl(frameBytes, "image/png");
+      frames.push(frameDataUrl);
+      
+      // Use the previous frame as reference for the next one (for coherence)
+      currentImageB64 = frameDataUrl.split(",")[1] || "";
+      
+      if (i % 10 === 0) {
+        console.log(`[generate-video] Generated ${frames.length}/${frameCount} frames`);
       }
-    } catch (error) {
-      console.error(`[generate-video] ${model} exception:`, error);
     }
+    
+    console.log(`[generate-video] Frame sequence complete: ${frames.length} frames`);
+    return { success: true, frames };
+  } catch (error) {
+    console.error("[generate-video] Coherent frames error:", error);
+    return { success: false, error: "Failed to generate frame sequence" };
   }
-  
-  return { success: false, error: "No T2V models available" };
 }
 
 serve(async (req) => {
@@ -377,22 +402,31 @@ serve(async (req) => {
     }
     console.log("[generate-video] SVD failed:", svdResult.error);
 
-    // 3. Try other T2V models
-    console.log("[generate-video] Step 3: Trying other T2V models...");
-    const t2vResult = await tryOtherT2V(HUGGINGFACE_API_KEY, prompt);
-    if (t2vResult.success && t2vResult.dataUrl) {
-      return new Response(
-        JSON.stringify({
-          frames: [t2vResult.dataUrl],
-          type: "video",
-          model: "huggingface-t2v",
-          fps: 8,
-          quality: "medium",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // 3. Fallback: Generate coherent frame sequence via Cloudflare img2img
+    if (CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_API_TOKEN) {
+      console.log("[generate-video] Step 3: Generating coherent frame sequence...");
+      const framesResult = await generateCoherentFrames(
+        CLOUDFLARE_ACCOUNT_ID,
+        CLOUDFLARE_API_TOKEN,
+        prompt,
+        40
       );
+      if (framesResult.success && framesResult.frames && framesResult.frames.length > 1) {
+        return new Response(
+          JSON.stringify({
+            frames: framesResult.frames,
+            type: "frames",
+            model: "cloudflare-img2img",
+            fps: 8,
+            quality: "high",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log("[generate-video] Coherent frames failed:", framesResult.error);
+    } else {
+      console.log("[generate-video] Step 3: Cloudflare not configured, skipping frame fallback");
     }
-    console.log("[generate-video] T2V failed:", t2vResult.error);
 
     // All methods failed
     throw new Error("All video generation methods failed. Please try again later.");
