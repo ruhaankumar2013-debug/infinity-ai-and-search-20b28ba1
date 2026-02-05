@@ -6,10 +6,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const HF_ROUTER_BASE = "https://router.huggingface.co/hf-inference/models";
-const hfModelUrl = (model: string) => `${HF_ROUTER_BASE}/${model}`;
+const HF_INFERENCE_API = "https://api-inference.huggingface.co/models";
 
-// Convert binary buffer to base64 data URL
+// Wan 2.1 model - text-to-video
+const WAN_MODEL = "Wan-AI/Wan2.1-T2V-14B";
+
+// Convert binary buffer to base64 data URL (chunked to avoid stack overflow)
 function bufferToDataUrl(bytes: Uint8Array, mimeType: string): string {
   let binary = '';
   const chunkSize = 8192;
@@ -20,7 +22,7 @@ function bufferToDataUrl(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${btoa(binary)}`;
 }
 
-// Detect content type from response or bytes
+// Detect content type from response headers or magic bytes
 function detectContentType(contentType: string, bytes: Uint8Array): string {
   if (contentType.includes("mp4")) return "video/mp4";
   if (contentType.includes("webm")) return "video/webm";
@@ -29,8 +31,8 @@ function detectContentType(contentType: string, bytes: Uint8Array): string {
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return "image/jpeg";
   
   // Check magic bytes
-  if (bytes.length >= 4) {
-    // MP4: starts with ftyp
+  if (bytes.length >= 8) {
+    // MP4: check for ftyp at offset 4
     if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
       return "video/mp4";
     }
@@ -48,295 +50,127 @@ function detectContentType(contentType: string, bytes: Uint8Array): string {
     }
   }
   
-  return "video/mp4"; // Default
+  return "video/mp4"; // Default assumption
 }
 
-// Try Mochi 1 Preview - text-to-video model
-async function tryMochi(apiKey: string, prompt: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-  const mochiModels = [
-    "genmo/mochi-1-preview",
-    "Genmo/Mochi-1-preview"
-  ];
-  
-  for (const model of mochiModels) {
-    try {
-      console.log(`[generate-video] Trying Mochi model: ${model}`);
-      
-      const response = await fetch(
-        hfModelUrl(model),
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            inputs: prompt,
-          }),
-        }
-      );
-      
-      console.log(`[generate-video] Mochi ${model} status: ${response.status}`);
-      
-      if (response.status === 503) {
-        const errorText = await response.text().catch(() => "");
-        console.log(`[generate-video] Mochi loading: ${errorText.substring(0, 100)}`);
-        if (errorText.includes("loading")) {
-          console.log("[generate-video] Waiting 30s for Mochi to load...");
-          await new Promise(r => setTimeout(r, 30000));
-          continue;
-        }
-      }
-      
-      if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
+// Sleep helper
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-        if (contentType.includes("application/json")) {
-          const errorText = await response.text().catch(() => "");
-          console.log(`[generate-video] Mochi ${model} returned JSON: ${errorText.substring(0, 150)}`);
-          continue;
-        }
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        
-        if (bytes.length > 1000) {
-          const mimeType = detectContentType(contentType, bytes);
-          const dataUrl = bufferToDataUrl(bytes, mimeType);
-          console.log(`[generate-video] Mochi success: ${bytes.length} bytes, type: ${mimeType}`);
-          return { success: true, dataUrl };
-        }
-      }
-      
-      const errorText = await response.text().catch(() => "");
-      console.log(`[generate-video] Mochi ${model} error: ${errorText.substring(0, 150)}`);
-    } catch (error) {
-      console.error(`[generate-video] Mochi ${model} exception:`, error);
-    }
-  }
-  
-  return { success: false, error: "Mochi models unavailable" };
-}
-
-// Try Stable Video Diffusion (image-to-video) - generate image first then animate
-async function trySVD(apiKey: string, prompt: string, cfAccountId?: string, cfToken?: string): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-  console.log("[generate-video] Trying SVD pipeline...");
-  
-  // First generate a base image
-  let baseImageBytes: Uint8Array | null = null;
-  
-  // Try Cloudflare SDXL for base image
-  if (cfAccountId && cfToken) {
-    try {
-      console.log("[generate-video] Generating base image with Cloudflare SDXL...");
-      const imgResponse = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${cfToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt: prompt,
-            num_steps: 20,
-            guidance: 7.5,
-          }),
-        }
-      );
-      
-      if (imgResponse.ok) {
-        baseImageBytes = new Uint8Array(await imgResponse.arrayBuffer());
-        console.log(`[generate-video] Base image generated: ${baseImageBytes.length} bytes`);
-      }
-    } catch (error) {
-      console.error("[generate-video] Cloudflare SDXL error:", error);
-    }
-  }
-  
-  // Fallback: try HuggingFace SDXL for base image
-  if (!baseImageBytes) {
-    try {
-      console.log("[generate-video] Trying HuggingFace SDXL for base image...");
-      const imgResponse = await fetch(
-        hfModelUrl("stabilityai/stable-diffusion-xl-base-1.0"),
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ inputs: prompt }),
-        }
-      );
-      
-      if (imgResponse.ok) {
-        baseImageBytes = new Uint8Array(await imgResponse.arrayBuffer());
-        console.log(`[generate-video] HF SDXL base image: ${baseImageBytes.length} bytes`);
-      }
-    } catch (error) {
-      console.error("[generate-video] HuggingFace SDXL error:", error);
-    }
-  }
-  
-  if (!baseImageBytes || baseImageBytes.length < 1000) {
-    return { success: false, error: "Could not generate base image for SVD" };
-  }
-  
-  // Now try SVD models to animate the image
-  const svdModels = [
-    "stabilityai/stable-video-diffusion-img2vid-xt",
-    "stabilityai/stable-video-diffusion-img2vid",
-    "stabilityai/stable-video-diffusion-img2vid-xt-1-1"
-  ];
-  
-  for (const model of svdModels) {
-    try {
-      console.log(`[generate-video] Trying SVD model: ${model}`);
-      
-      // Convert image bytes to base64 for SVD input
-      const imageDataUrl = bufferToDataUrl(baseImageBytes, "image/png");
-      const imagePureBase64 = imageDataUrl.split(",")[1] || imageDataUrl;
-      
-      const tryOnce = async (inputs: string) =>
-        await fetch(hfModelUrl(model), {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ inputs }),
-        });
-
-      // Some pipelines accept full data URLs, others want the raw base64 string.
-      let response = await tryOnce(imageDataUrl);
-      if (!response.ok) response = await tryOnce(imagePureBase64);
-      
-      console.log(`[generate-video] SVD ${model} status: ${response.status}`);
-      
-      if (response.status === 503) {
-        const errorText = await response.text().catch(() => "");
-        console.log(`[generate-video] SVD loading: ${errorText.substring(0, 100)}`);
-        if (errorText.includes("loading")) {
-          console.log("[generate-video] Waiting 30s for SVD to load...");
-          await new Promise(r => setTimeout(r, 30000));
-          continue;
-        }
-      }
-      
-      if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
-
-        if (contentType.includes("application/json")) {
-          const errorText = await response.text().catch(() => "");
-          console.log(`[generate-video] SVD ${model} returned JSON: ${errorText.substring(0, 150)}`);
-          continue;
-        }
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        
-        if (bytes.length > 1000) {
-          const mimeType = detectContentType(contentType, bytes);
-          const dataUrl = bufferToDataUrl(bytes, mimeType);
-          console.log(`[generate-video] SVD success: ${bytes.length} bytes, type: ${mimeType}`);
-          return { success: true, dataUrl };
-        }
-      }
-      
-      const errorText = await response.text().catch(() => "");
-      console.log(`[generate-video] SVD ${model} error: ${errorText.substring(0, 150)}`);
-    } catch (error) {
-      console.error(`[generate-video] SVD ${model} exception:`, error);
-    }
-  }
-  
-  // If SVD fails, do NOT return a 1-frame fallback (users expect a real video)
-  console.log("[generate-video] SVD failed; skipping 1-frame fallback");
-  return { success: false, error: "SVD failed to generate a video" };
-}
-
-// Generate coherent frame sequence (40 frames) using Cloudflare img2img with tiny strength
-async function generateCoherentFrames(
-  cfAccountId: string,
-  cfToken: string,
+// Generate video using Wan 2.1 with retry logic for 503 (model loading)
+async function generateWithWan(
+  apiKey: string,
   prompt: string,
-  frameCount: number = 40
-): Promise<{ success: boolean; frames?: string[]; error?: string }> {
-  console.log(`[generate-video] Generating ${frameCount} coherent frames via img2img...`);
+  maxRetries: number = 5
+): Promise<{ success: boolean; dataUrl?: string; error?: string; estimatedTime?: number }> {
   
-  // 1. Generate base image
-  try {
-    const baseResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
-      {
+  const url = `${HF_INFERENCE_API}/${WAN_MODEL}`;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    console.log(`[generate-video] Wan 2.1 attempt ${attempt}/${maxRetries}`);
+    
+    try {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${cfToken}`,
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          prompt,
-          num_steps: 20,
-          guidance: 7.5,
-        }),
-      }
-    );
-    
-    if (!baseResponse.ok) {
-      return { success: false, error: "Failed to generate base image" };
-    }
-    
-    const baseBytes = new Uint8Array(await baseResponse.arrayBuffer());
-    const baseB64 = bufferToDataUrl(baseBytes, "image/png").split(",")[1] || "";
-    console.log(`[generate-video] Base image: ${baseBytes.length} bytes`);
-    
-    const frames: string[] = [bufferToDataUrl(baseBytes, "image/png")];
-    
-    let currentImageB64 = baseB64;
-    
-    // 2. Generate subsequent frames with tiny transformations
-    for (let i = 1; i < frameCount; i++) {
-      const strength = 0.05 + (Math.random() * 0.03); // 0.05-0.08 for subtle motion
-      const framePrompt = prompt + ", subtle gentle motion, cinematic";
+        body: JSON.stringify({ inputs: prompt }),
+      });
       
-      const frameResponse = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/runwayml/stable-diffusion-v1-5-img2img`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${cfToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            prompt: framePrompt,
-            image_b64: currentImageB64,
-            strength,
-            num_steps: 15,
-            guidance: 7.5,
-          }),
+      console.log(`[generate-video] Wan 2.1 status: ${response.status}`);
+      
+      // Handle 503 - Model Loading
+      if (response.status === 503) {
+        const errorData = await response.json().catch(() => ({}));
+        const estimatedTime = errorData.estimated_time || 30;
+        
+        console.log(`[generate-video] Model loading, estimated time: ${estimatedTime}s`);
+        
+        if (attempt < maxRetries) {
+          // Wait for the estimated time plus a small buffer
+          const waitTime = Math.min(estimatedTime * 1000 + 5000, 120000); // Max 2 min wait
+          console.log(`[generate-video] Waiting ${waitTime / 1000}s before retry...`);
+          await sleep(waitTime);
+          continue;
         }
-      );
-      
-      if (!frameResponse.ok) {
-        console.log(`[generate-video] Frame ${i + 1} failed: ${frameResponse.status}`);
-        continue; // Skip failed frames
+        
+        return {
+          success: false,
+          error: `Model is loading. Estimated time: ${estimatedTime}s. Please try again.`,
+          estimatedTime,
+        };
       }
       
-      const frameBytes = new Uint8Array(await frameResponse.arrayBuffer());
-      const frameDataUrl = bufferToDataUrl(frameBytes, "image/png");
-      frames.push(frameDataUrl);
-      
-      // Use the previous frame as reference for the next one (for coherence)
-      currentImageB64 = frameDataUrl.split(",")[1] || "";
-      
-      if (i % 10 === 0) {
-        console.log(`[generate-video] Generated ${frames.length}/${frameCount} frames`);
+      // Handle other errors
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.log(`[generate-video] Wan 2.1 error: ${errorText.substring(0, 200)}`);
+        
+        // If it's a rate limit or temporary error, retry
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < maxRetries) {
+            await sleep(10000); // Wait 10s before retry
+            continue;
+          }
+        }
+        
+        return { success: false, error: `API error: ${response.status}` };
       }
+      
+      // Check content type
+      const contentType = response.headers.get("content-type") || "";
+      
+      // If JSON response, it might be an error or queue status
+      if (contentType.includes("application/json")) {
+        const jsonData = await response.json();
+        console.log(`[generate-video] Wan 2.1 JSON response:`, JSON.stringify(jsonData).substring(0, 200));
+        
+        if (jsonData.error) {
+          return { success: false, error: jsonData.error };
+        }
+        
+        // Some models return base64 in JSON
+        if (jsonData.video || jsonData.output) {
+          const videoData = jsonData.video || jsonData.output;
+          if (typeof videoData === 'string') {
+            const dataUrl = videoData.startsWith('data:') 
+              ? videoData 
+              : `data:video/mp4;base64,${videoData}`;
+            return { success: true, dataUrl };
+          }
+        }
+        
+        return { success: false, error: "Unexpected JSON response" };
+      }
+      
+      // Binary response - this is the video!
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      
+      if (bytes.length < 1000) {
+        console.log(`[generate-video] Response too small: ${bytes.length} bytes`);
+        return { success: false, error: "Response too small to be a valid video" };
+      }
+      
+      const mimeType = detectContentType(contentType, bytes);
+      const dataUrl = bufferToDataUrl(bytes, mimeType);
+      
+      console.log(`[generate-video] Wan 2.1 success: ${bytes.length} bytes, type: ${mimeType}`);
+      return { success: true, dataUrl };
+      
+    } catch (error) {
+      console.error(`[generate-video] Wan 2.1 exception:`, error);
+      
+      if (attempt < maxRetries) {
+        await sleep(5000);
+        continue;
+      }
+      
+      return { success: false, error: error instanceof Error ? error.message : "Network error" };
     }
-    
-    console.log(`[generate-video] Frame sequence complete: ${frames.length} frames`);
-    return { success: true, frames };
-  } catch (error) {
-    console.error("[generate-video] Coherent frames error:", error);
-    return { success: false, error: "Failed to generate frame sequence" };
   }
+  
+  return { success: false, error: "Max retries exceeded" };
 }
 
 serve(async (req) => {
@@ -356,80 +190,43 @@ serve(async (req) => {
 
     console.log("[generate-video] Generating video for:", prompt.substring(0, 100));
 
-    const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
-    const CLOUDFLARE_ACCOUNT_ID = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
-    const CLOUDFLARE_API_TOKEN = Deno.env.get("CLOUDFLARE_API_TOKEN");
+    const HF_TOKEN = Deno.env.get("HUGGINGFACE_API_KEY");
 
-    if (!HUGGINGFACE_API_KEY) {
+    if (!HF_TOKEN) {
       return new Response(
-        JSON.stringify({ error: "Video generation not configured" }),
+        JSON.stringify({ error: "HUGGINGFACE_API_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 1. Try Mochi 1 Preview first (best text-to-video)
-    console.log("[generate-video] Step 1: Trying Mochi 1 Preview...");
-    const mochiResult = await tryMochi(HUGGINGFACE_API_KEY, prompt);
-    if (mochiResult.success && mochiResult.dataUrl) {
+    // Generate using Wan 2.1
+    console.log("[generate-video] Using Wan 2.1 text-to-video model...");
+    const result = await generateWithWan(HF_TOKEN, prompt);
+    
+    if (result.success && result.dataUrl) {
+      const isVideo = result.dataUrl.includes("video/");
       return new Response(
         JSON.stringify({
-          frames: [mochiResult.dataUrl],
-          type: "video",
-          model: "mochi-1-preview",
+          frames: [result.dataUrl],
+          type: isVideo ? "video" : "image",
+          model: "wan-2.1-t2v",
           fps: 24,
           quality: "high",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    console.log("[generate-video] Mochi failed:", mochiResult.error);
 
-    // 2. Try SVD pipeline (image-to-video)
-    console.log("[generate-video] Step 2: Trying SVD pipeline...");
-    const svdResult = await trySVD(HUGGINGFACE_API_KEY, prompt, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN);
-    if (svdResult.success && svdResult.dataUrl) {
-      const isVideo = svdResult.dataUrl.includes("video/");
-      return new Response(
-        JSON.stringify({
-          frames: [svdResult.dataUrl],
-          type: isVideo ? "video" : "image",
-          model: isVideo ? "stable-video-diffusion" : "sdxl-fallback",
-          fps: isVideo ? 14 : 1,
-          quality: "high",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    console.log("[generate-video] SVD failed:", svdResult.error);
+    // Return error with estimated time if available (for UI countdown)
+    return new Response(
+      JSON.stringify({
+        error: result.error || "Video generation failed",
+        estimatedTime: result.estimatedTime,
+        retryable: !!result.estimatedTime,
+      }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
 
-    // 3. Fallback: Generate coherent frame sequence via Cloudflare img2img
-    if (CLOUDFLARE_ACCOUNT_ID && CLOUDFLARE_API_TOKEN) {
-      console.log("[generate-video] Step 3: Generating coherent frame sequence...");
-      const framesResult = await generateCoherentFrames(
-        CLOUDFLARE_ACCOUNT_ID,
-        CLOUDFLARE_API_TOKEN,
-        prompt,
-        40
-      );
-      if (framesResult.success && framesResult.frames && framesResult.frames.length > 1) {
-        return new Response(
-          JSON.stringify({
-            frames: framesResult.frames,
-            type: "frames",
-            model: "cloudflare-img2img",
-            fps: 8,
-            quality: "high",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      console.log("[generate-video] Coherent frames failed:", framesResult.error);
-    } else {
-      console.log("[generate-video] Step 3: Cloudflare not configured, skipping frame fallback");
-    }
-
-    // All methods failed
-    throw new Error("All video generation methods failed. Please try again later.");
   } catch (error) {
     console.error("[generate-video] Error:", error);
     return new Response(
