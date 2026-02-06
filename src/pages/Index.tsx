@@ -301,30 +301,27 @@ const Index = () => {
             };
             return newMessages;
           });
-        } else if (targetModel === "stable-video-diffusion") {
+        } else if (targetModel === "wan-2.2") {
           setMessages(prev => [...prev, {
             role: "assistant",
-            content: "🎬 Generating animated sequence with SDXL..."
+            content: "🎬 Generating video with Wan 2.2 (Cloud Rendering)..."
           }]);
           const {
             data: vidData,
             error: vidError
           } = await supabase.functions.invoke("generate-video", {
             body: {
-              prompt: modifiedPrompt,
-              frameCount: 6
+              prompt: modifiedPrompt
             }
           });
           if (vidError) throw vidError;
-          const frames = vidData.frames || [vidData.videoUrl];
-          imageUrl = vidData.videoUrl;
-          assistantContent = `Here's your ${frames.length}-frame animated sequence:`;
+          const frames = vidData.frames || [];
+          assistantContent = "Here's your AI-generated video:";
           setMessages(prev => {
             const newMessages = [...prev];
             newMessages[newMessages.length - 1] = {
               role: "assistant",
               content: assistantContent,
-              imageUrl,
               frames
             };
             return newMessages;
@@ -372,31 +369,28 @@ const Index = () => {
       } catch (error) {
         throw new Error(`SDXL generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-    } else if (selectedModelId === "@stability/svd") {
+    } else if (selectedModelId === "@wan/wan2.2-t2v") {
       try {
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: "🎬 Generating animated sequence with SDXL..."
+          content: "🎬 Generating video with Wan 2.2 (Cloud Rendering)..."
         }]);
         const {
           data: vidData,
           error: vidError
         } = await supabase.functions.invoke("generate-video", {
           body: {
-            prompt: lastUserMessage.content,
-            frameCount: 6
+            prompt: lastUserMessage.content
           }
         });
         if (vidError) throw vidError;
-        const frames = vidData.frames || [vidData.videoUrl];
-        imageUrl = vidData.videoUrl;
-        assistantContent = `Here's your ${frames.length}-frame animated sequence:`;
+        const frames = vidData.frames || [];
+        assistantContent = "Here's your AI-generated video:";
         setMessages(prev => {
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
             role: "assistant",
             content: assistantContent,
-            imageUrl,
             frames
           };
           return newMessages;
