@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, model = 'openai/gpt-4o', stream = true } = await req.json();
+  const { messages, model = 'openai/gpt-oss-120b:free', stream = true } = await req.json();
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
@@ -31,11 +31,10 @@ serve(async (req) => {
 
     console.log(`[openrouter-chat] Calling OpenRouter with model: ${model}, streaming: ${stream}`);
 
-    // Map internal model names to OpenRouter model IDs
+    // Map internal model names to OpenRouter model IDs - use free GPT-OSS-120B
     let openRouterModel = model;
     if (model === 'gpt-oss-120b' || model === '@openrouter/gpt-oss-120b') {
-      // GPT-OSS doesn't exist on OpenRouter, use GPT-4o as high-capability model
-      openRouterModel = 'openai/gpt-4o';
+      openRouterModel = 'openai/gpt-oss-120b:free';
     }
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
