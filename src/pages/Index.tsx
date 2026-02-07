@@ -301,10 +301,10 @@ const Index = () => {
             };
             return newMessages;
           });
-        } else if (targetModel === "wan-2.2") {
+        } else if (targetModel === "minimax-video") {
           setMessages(prev => [...prev, {
             role: "assistant",
-            content: "🎬 Generating video with Wan 2.2 (Cloud Rendering)..."
+            content: "🎬 Generating video with Minimax Video-01... (1 free video per week)"
           }]);
           const {
             data: vidData,
@@ -314,18 +314,26 @@ const Index = () => {
               prompt: modifiedPrompt
             }
           });
-          if (vidError) throw vidError;
-          const frames = vidData.frames || [];
-          assistantContent = "Here's your AI-generated video:";
-          setMessages(prev => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1] = {
-              role: "assistant",
-              content: assistantContent,
-              frames
-            };
-            return newMessages;
-          });
+          if (vidError) {
+            // Check for quota exceeded
+            if (vidData?.quotaExceeded) {
+              assistantContent = `⏳ ${vidData.error || "You've used your weekly video generation."}`;
+            } else {
+              throw vidError;
+            }
+          } else {
+            const frames = vidData.frames || [];
+            assistantContent = "Here's your AI-generated video:";
+            setMessages(prev => {
+              const newMessages = [...prev];
+              newMessages[newMessages.length - 1] = {
+                role: "assistant",
+                content: assistantContent,
+                frames
+              };
+              return newMessages;
+            });
+          }
         } else if (targetModel === "gpt-oss-120b") {
           await streamOpenRouterResponse(messages, conversationId);
           return;
@@ -369,11 +377,11 @@ const Index = () => {
       } catch (error) {
         throw new Error(`SDXL generation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-    } else if (selectedModelId === "@wan/wan2.2-t2v") {
+    } else if (selectedModelId === "@replicate/minimax-video-01") {
       try {
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: "🎬 Generating video with Wan 2.2 (Cloud Rendering)..."
+          content: "🎬 Generating video with Minimax Video-01... (1 free video per week)"
         }]);
         const {
           data: vidData,
@@ -383,7 +391,11 @@ const Index = () => {
             prompt: lastUserMessage.content
           }
         });
-        if (vidError) throw vidError;
+        if (vidError) {
+          // Check for quota exceeded
+          const errorMsg = vidError.message || "Video generation failed";
+          throw new Error(errorMsg);
+        }
         const frames = vidData.frames || [];
         assistantContent = "Here's your AI-generated video:";
         setMessages(prev => {
