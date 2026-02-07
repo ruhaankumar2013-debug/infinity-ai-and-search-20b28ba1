@@ -11,12 +11,12 @@ const ROUTER_SYSTEM_PROMPT = `You are ULTRA, an intelligent AI orchestrator. You
 AVAILABLE MODELS:
 1. "gpt-oss-120b" - Deep reasoning, analysis, complex questions, coding, math, planning
 2. "sdxl" - Image generation (when user wants to CREATE/GENERATE/DRAW/MAKE an image)
-3. "wan-2.2" - Video generation (when user wants to CREATE/GENERATE/MAKE a video or animation)
+3. "minimax-video" - Video generation (when user wants to CREATE/GENERATE/MAKE a video or animation)
 4. "fast-text" - Simple chat, greetings, quick questions, casual conversation
 
 ROUTING RULES:
 - Image requests (draw, create image, generate picture, make art, visualize) → "sdxl"
-- Video requests (create video, animate, make animation, generate clip) → "wan-2.2"  
+- Video requests (create video, animate, make animation, generate clip) → "minimax-video"  
 - Deep reasoning, analysis, coding, math, complex explanations → "gpt-oss-120b"
 - Simple questions, greetings, casual chat → "fast-text"
 - Ambiguous/unclear prompts → "gpt-oss-120b" (it will ask for clarification)
@@ -107,7 +107,7 @@ serve(async (req) => {
       const routingDecision = JSON.parse(jsonStr);
       
       // Validate the model choice
-      const validModels = ['gpt-oss-120b', 'sdxl', 'wan-2.2', 'fast-text'];
+      const validModels = ['gpt-oss-120b', 'sdxl', 'minimax-video', 'fast-text'];
       if (!validModels.includes(routingDecision.model)) {
         routingDecision.model = 'gpt-oss-120b';
         routingDecision.reason = 'Invalid model choice, defaulting to reasoning model';
