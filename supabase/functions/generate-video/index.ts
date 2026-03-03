@@ -222,7 +222,8 @@ serve(async (req) => {
             frames: [result.videoUrl],
             type: "video",
             model: "minimax-video-01",
-            fps: 24,
+            fps: 8,
+            totalFrames: 42,
             quality: "high",
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }

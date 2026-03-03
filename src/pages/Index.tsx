@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Code2, MessageSquare, Loader2, Menu, LogOut, Search, User, X } from "lucide-react";
+import { Send, Code2, MessageSquare, Loader2, Menu, LogOut, Search, User, X, GraduationCap } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatMessage } from "@/components/ChatMessage";
 import { AdminPanel } from "@/components/AdminPanel";
+import { TeachPanel } from "@/components/TeachPanel";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -47,7 +48,7 @@ const Index = () => {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [viewMode, setViewMode] = useState<"home" | "chat" | "admin" | "search">("home");
+  const [viewMode, setViewMode] = useState<"home" | "chat" | "admin" | "search" | "teach">("home");
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -990,6 +991,10 @@ const Index = () => {
                   <Code2 className="w-4 h-4 mr-2" />
                   Admin
                 </Button>}
+              {user && <Button variant={viewMode === "teach" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("teach")}>
+                  <GraduationCap className="w-4 h-4 mr-2" />
+                  Teach
+                </Button>}
               {user ? <Button variant="outline" onClick={handleLogout} size="sm">
                   <LogOut className="w-4 h-4 mr-2" />
                   Sign out
@@ -1059,7 +1064,9 @@ const Index = () => {
               </div>
             </div> : viewMode === "search" ? <div className="h-[calc(100vh-12rem)] overflow-y-auto">
               <SearchTab />
-            </div> : <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
+            </div> : viewMode === "teach" && user ? <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
+              <TeachPanel userId={user.id} />
+            </Card> : <Card className="h-[calc(100vh-12rem)] p-6 bg-card/50 backdrop-blur-sm border-border overflow-hidden">
               <AdminPanel knowledgeEntries={knowledgeEntries} onRefresh={fetchKnowledge} />
             </Card>}
         </div>
