@@ -336,7 +336,13 @@ const Index = () => {
             });
           }
         } else if (targetModel === "gpt-oss-120b") {
-          await streamOpenRouterResponse(messages, conversationId);
+          await streamOpenRouterResponse(messages, conversationId, "gpt-oss-120b");
+          return;
+        } else if (targetModel === "gemma-4-31b") {
+          await streamOpenRouterResponse(messages, conversationId, "gemma-4-31b");
+          return;
+        } else if (targetModel === "nemotron-3-super") {
+          await streamOpenRouterResponse(messages, conversationId, "nemotron-3-super");
           return;
         } else {
           await streamCloudflareResponse(messages, conversationId);
@@ -347,7 +353,13 @@ const Index = () => {
         throw new Error(`ULTRA orchestration failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     } else if (selectedModelId === "@openrouter/gpt-oss-120b") {
-      await streamOpenRouterResponse(messages, conversationId);
+      await streamOpenRouterResponse(messages, conversationId, "gpt-oss-120b");
+      return;
+    } else if (selectedModelId === "@openrouter/gemma-4-31b") {
+      await streamOpenRouterResponse(messages, conversationId, "gemma-4-31b");
+      return;
+    } else if (selectedModelId === "@openrouter/nemotron-3-super") {
+      await streamOpenRouterResponse(messages, conversationId, "nemotron-3-super");
       return;
     } else if (selectedModelId === "@cf/stabilityai/sdxl") {
       try {
@@ -426,7 +438,7 @@ const Index = () => {
       await supabase.from("messages").insert(insertData);
     }
   };
-  const streamOpenRouterResponse = async (messages: Message[], conversationId: string) => {
+  const streamOpenRouterResponse = async (messages: Message[], conversationId: string, model: string = "gpt-oss-120b") => {
     let streamedContent = "";
     setIsStreaming(true);
     setMessages(prev => [...prev, {
@@ -445,7 +457,7 @@ const Index = () => {
             role: m.role,
             content: m.content
           })),
-          model: "gpt-oss-120b",
+          model,
           stream: true
         })
       });
