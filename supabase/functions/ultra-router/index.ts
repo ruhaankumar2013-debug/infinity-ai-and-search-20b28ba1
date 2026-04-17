@@ -111,7 +111,7 @@ serve(async (req) => {
       const routingDecision = JSON.parse(jsonStr);
       
       // Validate the model choice
-      const validModels = ['gpt-oss-120b', 'sdxl', 'minimax-video', 'fast-text'];
+      const validModels = ['gpt-oss-120b', 'gemma-4-31b', 'nemotron-3-super', 'sdxl', 'minimax-video', 'fast-text'];
       if (!validModels.includes(routingDecision.model)) {
         routingDecision.model = 'gpt-oss-120b';
         routingDecision.reason = 'Invalid model choice, defaulting to reasoning model';
