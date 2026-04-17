@@ -463,7 +463,23 @@ const Index = () => {
       });
       if (!response.ok || !response.body) {
         setIsStreaming(false);
-        throw new Error("Failed to start streaming");
+        let friendly = "Failed to start streaming";
+        try {
+          const errJson = await response.json();
+          friendly = errJson.error || friendly;
+        } catch {}
+        if (response.status === 429) {
+          friendly = "Rate limit reached on this free model. Please wait a minute and try again, or pick another model.";
+        } else if (response.status === 402) {
+          friendly = "OpenRouter credits exhausted. Try another model.";
+        }
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: "assistant", content: `⚠️ ${friendly}` };
+          return copy;
+        });
+        toast({ title: "Model unavailable", description: friendly, variant: "destructive" });
+        return;
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
