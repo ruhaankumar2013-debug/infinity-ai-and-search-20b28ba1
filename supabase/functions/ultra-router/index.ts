@@ -10,16 +10,20 @@ const ROUTER_SYSTEM_PROMPT = `You are ULTRA, an intelligent AI orchestrator. You
 
 AVAILABLE MODELS:
 1. "gpt-oss-120b" - Deep reasoning, analysis, complex questions, coding, math, planning
-2. "sdxl" - Image generation (when user wants to CREATE/GENERATE/DRAW/MAKE an image)
-3. "minimax-video" - Video generation (when user wants to CREATE/GENERATE/MAKE a video or animation)
-4. "fast-text" - Simple chat, greetings, quick questions, casual conversation
+2. "gemma-4-31b" - Efficient mid-size reasoning, balanced quality/speed, multilingual
+3. "nemotron-3-super" - NVIDIA's 120B model, strong at structured reasoning, code, and technical tasks
+4. "sdxl" - Image generation (when user wants to CREATE/GENERATE/DRAW/MAKE an image)
+5. "minimax-video" - Video generation (when user wants to CREATE/GENERATE/MAKE a video or animation)
+6. "fast-text" - Simple chat, greetings, quick questions, casual conversation
 
 ROUTING RULES:
 - Image requests (draw, create image, generate picture, make art, visualize) → "sdxl"
-- Video requests (create video, animate, make animation, generate clip) → "minimax-video"  
-- Deep reasoning, analysis, coding, math, complex explanations → "gpt-oss-120b"
+- Video requests (create video, animate, make animation, generate clip) → "minimax-video"
+- Heavy reasoning, deep analysis, complex math/proofs → "gpt-oss-120b"
+- Technical/code/structured reasoning tasks → "nemotron-3-super"
+- Balanced general questions, multilingual, mid-complexity → "gemma-4-31b"
 - Simple questions, greetings, casual chat → "fast-text"
-- Ambiguous/unclear prompts → "gpt-oss-120b" (it will ask for clarification)
+- Ambiguous/unclear prompts → "gpt-oss-120b"
 
 RESPOND WITH ONLY THIS JSON FORMAT (no other text):
 {
@@ -107,7 +111,7 @@ serve(async (req) => {
       const routingDecision = JSON.parse(jsonStr);
       
       // Validate the model choice
-      const validModels = ['gpt-oss-120b', 'sdxl', 'minimax-video', 'fast-text'];
+      const validModels = ['gpt-oss-120b', 'gemma-4-31b', 'nemotron-3-super', 'sdxl', 'minimax-video', 'fast-text'];
       if (!validModels.includes(routingDecision.model)) {
         routingDecision.model = 'gpt-oss-120b';
         routingDecision.reason = 'Invalid model choice, defaulting to reasoning model';
