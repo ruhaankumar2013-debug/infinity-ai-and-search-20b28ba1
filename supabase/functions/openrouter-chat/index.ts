@@ -31,10 +31,14 @@ serve(async (req) => {
 
     console.log(`[openrouter-chat] Calling OpenRouter with model: ${model}, streaming: ${stream}`);
 
-    // Map internal model names to OpenRouter model IDs - use free GPT-OSS-120B
+    // Map internal model names to OpenRouter model IDs
     let openRouterModel = model;
     if (model === 'gpt-oss-120b' || model === '@openrouter/gpt-oss-120b') {
       openRouterModel = 'openai/gpt-oss-120b:free';
+    } else if (model === 'gemma-4-31b' || model === '@openrouter/gemma-4-31b') {
+      openRouterModel = 'google/gemma-4-31b-it:free';
+    } else if (model === 'nemotron-3-super' || model === '@openrouter/nemotron-3-super') {
+      openRouterModel = 'nvidia/nemotron-3-super-120b-a12b:free';
     }
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
