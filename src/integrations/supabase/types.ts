@@ -38,6 +38,39 @@ export type Database = {
         }
         Relationships: []
       }
+      code_files: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          language: string
+          path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          language?: string
+          path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          language?: string
+          path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       conversations: {
         Row: {
           created_at: string
