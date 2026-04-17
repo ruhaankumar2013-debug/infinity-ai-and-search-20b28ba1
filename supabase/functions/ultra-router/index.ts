@@ -60,34 +60,59 @@ serve(async (req) => {
     
     console.log('[ultra-router] Analyzing prompt:', userPrompt.substring(0, 100));
 
-    // Call GPT-OSS-120B via OpenRouter for routing decision
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://infinity-ai-and-search.lovable.app',
-        'X-Title': 'Infinity AI ULTRA Router',
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-4o-mini', // Fast, cheap model for routing decisions
-        messages: [
-          { role: 'system', content: ROUTER_SYSTEM_PROMPT },
-          { role: 'user', content: `Analyze and route this prompt: "${userPrompt}"` }
-        ],
-        temperature: 0.1,
-        max_tokens: 200,
-      }),
-    });
+    // Fallback chain of routing/orchestrator models — try each until one works
+    const ROUTER_MODEL_FALLBACKS = [
+      'openai/gpt-oss-120b:free',
+      'google/gemma-4-31b-it:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'openai/gpt-4o-mini',
+    ];
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[ultra-router] OpenRouter error:', response.status, errorText);
-      // Fallback to GPT-OSS-120B on error
+    let response: Response | null = null;
+    let lastError = '';
+    for (const routerModel of ROUTER_MODEL_FALLBACKS) {
+      console.log('[ultra-router] Trying router model:', routerModel);
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://infinity-ai-and-search.lovable.app',
+          'X-Title': 'Infinity AI ULTRA Router',
+        },
+        body: JSON.stringify({
+          model: routerModel,
+          messages: [
+            { role: 'system', content: ROUTER_SYSTEM_PROMPT },
+            { role: 'user', content: `Analyze and route this prompt: "${userPrompt}"` }
+          ],
+          temperature: 0.1,
+          max_tokens: 200,
+        }),
+      });
+
+      if (r.ok) {
+        response = r;
+        break;
+      }
+
+      const errText = await r.text();
+      lastError = `${r.status}: ${errText}`;
+      console.warn(`[ultra-router] Router model ${routerModel} failed (${r.status}), trying next...`);
+
+      // Only fallthrough on model availability errors (404 not found, 410 deprecated, 429 rate-limit, 5xx)
+      if (![404, 410, 429, 500, 502, 503].includes(r.status)) {
+        break;
+      }
+    }
+
+    if (!response) {
+      console.error('[ultra-router] All router fallbacks exhausted:', lastError);
+      // Sensible default routing decision
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           model: 'gpt-oss-120b',
-          reason: 'Router fallback due to API error',
+          reason: 'Router fallback chain exhausted, defaulting to reasoning model',
           modified_prompt: null
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
