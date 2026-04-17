@@ -438,7 +438,7 @@ const Index = () => {
       await supabase.from("messages").insert(insertData);
     }
   };
-  const streamOpenRouterResponse = async (messages: Message[], conversationId: string) => {
+  const streamOpenRouterResponse = async (messages: Message[], conversationId: string, model: string = "gpt-oss-120b") => {
     let streamedContent = "";
     setIsStreaming(true);
     setMessages(prev => [...prev, {
@@ -457,7 +457,7 @@ const Index = () => {
             role: m.role,
             content: m.content
           })),
-          model: "gpt-oss-120b",
+          model,
           stream: true
         })
       });
