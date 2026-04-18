@@ -27,6 +27,8 @@ import {
   ArrowLeft,
   Sparkles,
   Save,
+  Wand2,
+  StopCircle,
 } from "lucide-react";
 import JSZip from "jszip";
 import {
@@ -34,6 +36,7 @@ import {
   stripCodeBlocks,
   languageFromPath,
 } from "@/lib/codeBlockParser";
+import { scanFiles, formatIssuesForAI } from "@/lib/staticErrorScanner";
 import type { Session } from "@supabase/supabase-js";
 
 interface CodeFile {
