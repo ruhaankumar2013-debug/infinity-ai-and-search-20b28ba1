@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Plus, Upload, GraduationCap, Cpu, Zap, Brain, Image, Video } from "lucide-react";
+import { Plus, Upload, GraduationCap, Cpu, Zap, Brain } from "lucide-react";
+import { SPECIAL_TEACHABLE_MODELS } from "@/lib/teachableModels";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { KnowledgeEntry } from "./KnowledgeEntry";
@@ -31,12 +32,6 @@ interface TeachPanelProps {
   userId: string;
 }
 
-const SPECIAL_MODELS = [
-  { id: "@ultra/orchestrator", display_name: "ULTRA", name: "ultra" },
-  { id: "@openrouter/gpt-oss-120b", display_name: "GPT-OSS-120B", name: "gpt-oss-120b" },
-  { id: "@cf/stabilityai/sdxl", display_name: "Stable Diffusion XL", name: "sdxl" },
-  { id: "@replicate/minimax-video-01", display_name: "Minimax Video-01", name: "minimax-video-01" },
-];
 
 const knowledgeSchema = z.object({
   title: z.string().trim().min(1, "Title cannot be empty").max(200, "Title must be less than 200 characters"),
@@ -60,8 +55,9 @@ export const TeachPanel = ({ userId }: TeachPanelProps) => {
   const fetchModels = async () => {
     const { data, error } = await supabase
       .from("models")
-      .select("id, display_name, name")
+      .select("id, display_name, name, type")
       .eq("is_active", true)
+      .eq("type", "text-generation")
       .order("name", { ascending: true });
 
     if (error) {
@@ -69,7 +65,7 @@ export const TeachPanel = ({ userId }: TeachPanelProps) => {
       return;
     }
 
-    setModels([...SPECIAL_MODELS, ...(data || [])]);
+    setModels([...SPECIAL_TEACHABLE_MODELS, ...(data || [])]);
   };
 
   const fetchEntries = async () => {
@@ -157,9 +153,12 @@ export const TeachPanel = ({ userId }: TeachPanelProps) => {
 
   const getModelIcon = (model: Model) => {
     if (model.name === "ultra") return <Zap className="w-3 h-3" />;
-    if (model.name === "gpt-oss-120b") return <Brain className="w-3 h-3" />;
-    if (model.name === "sdxl") return <Image className="w-3 h-3" />;
-    if (model.name === "minimax-video-01") return <Video className="w-3 h-3" />;
+    if (
+      model.name === "gpt-oss-120b" ||
+      model.name === "gemma-4-31b" ||
+      model.name === "nemotron-3-super"
+    )
+      return <Brain className="w-3 h-3" />;
     return <Cpu className="w-3 h-3" />;
   };
 

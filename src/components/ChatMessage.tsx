@@ -13,7 +13,7 @@ interface ChatMessageProps {
 const AnimatedFramePlayer = ({ frames, fps = 8 }: { frames: string[]; fps?: number }) => {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (isPlaying && frames.length > 1) {
