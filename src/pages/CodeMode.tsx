@@ -89,6 +89,13 @@ const CodeMode = () => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Auto-fix loop state
+  const [loopRunning, setLoopRunning] = useState(false);
+  const [loopIteration, setLoopIteration] = useState(0);
+  const [loopLog, setLoopLog] = useState<string[]>([]);
+  const stopLoopRef = useRef(false);
+  const MAX_LOOP_ITERATIONS = 5;
+
   // Auth
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((_event, s) => {
