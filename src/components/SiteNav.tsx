@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Code2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,13 @@ export function SiteNav({ className }: SiteNavProps) {
       <Button asChild variant="ghost" size="sm">
         <Link to="/study">Study</Link>
       </Button>
+      <Button asChild variant="default" size="sm" className="ml-1">
+        <Link to="/code">
+          <Code2 className="w-3.5 h-3.5 mr-1" />
+          Code Mode
+        </Link>
+      </Button>
     </nav>
   );
 }
+

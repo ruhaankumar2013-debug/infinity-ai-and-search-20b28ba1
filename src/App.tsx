@@ -10,6 +10,7 @@ import StudyMode from "./pages/StudyMode";
 import AboutUs from "./pages/AboutUs";
 import TermsOfUse from "./pages/TermsOfUse";
 import UseCases from "./pages/UseCases";
+import CodeMode from "./pages/CodeMode";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/about" element={<AboutUs />} />
             <Route path="/terms" element={<TermsOfUse />} />
             <Route path="/use-cases" element={<UseCases />} />
+            <Route path="/code" element={<CodeMode />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
