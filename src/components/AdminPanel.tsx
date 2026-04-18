@@ -11,7 +11,8 @@ import { KnowledgeEntry } from "./KnowledgeEntry";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { z } from "zod";
 import { extractTextFromFile } from "@/lib/fileTextExtractor";
-import { Cpu, Zap, Brain, Image, Video } from "lucide-react";
+import { Cpu, Zap, Brain } from "lucide-react";
+import { SPECIAL_TEACHABLE_MODELS } from "@/lib/teachableModels";
 
 interface KnowledgeEntryType {
   id: string;
@@ -57,18 +58,13 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
     fetchModels();
   }, []);
 
-  const SPECIAL_MODELS: Model[] = [
-    { id: "@ultra/orchestrator", display_name: "ULTRA", name: "ultra" },
-    { id: "@openrouter/gpt-oss-120b", display_name: "GPT-OSS-120B", name: "gpt-oss-120b" },
-    { id: "@cf/stabilityai/sdxl", display_name: "Stable Diffusion XL", name: "sdxl" },
-    { id: "@replicate/minimax-video-01", display_name: "Minimax Video-01", name: "minimax-video-01" },
-  ];
-
   const fetchModels = async () => {
+    // Only text-generation models can be "taught" with knowledge entries
     const { data, error } = await supabase
       .from("models")
-      .select("id, display_name, name")
+      .select("id, display_name, name, type")
       .eq("is_active", true)
+      .eq("type", "text-generation")
       .order("name", { ascending: true });
 
     if (error) {
@@ -76,7 +72,7 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
       return;
     }
 
-    const allModels = [...SPECIAL_MODELS, ...(data || [])];
+    const allModels = [...SPECIAL_TEACHABLE_MODELS, ...(data || [])];
     setModels(allModels);
     if (allModels.length > 0 && !selectedModelId) {
       setSelectedModelId(allModels[0].id);
@@ -193,9 +189,12 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
 
   const getModelIcon = (model: Model) => {
     if (model.name === "ultra") return <Zap className="w-3 h-3" />;
-    if (model.name === "gpt-oss-120b") return <Brain className="w-3 h-3" />;
-    if (model.name === "sdxl") return <Image className="w-3 h-3" />;
-    if (model.name === "minimax-video-01") return <Video className="w-3 h-3" />;
+    if (
+      model.name === "gpt-oss-120b" ||
+      model.name === "gemma-4-31b" ||
+      model.name === "nemotron-3-super"
+    )
+      return <Brain className="w-3 h-3" />;
     return <Cpu className="w-3 h-3" />;
   };
 
