@@ -189,9 +189,12 @@ export const AdminPanel = ({ knowledgeEntries, onRefresh }: AdminPanelProps) => 
 
   const getModelIcon = (model: Model) => {
     if (model.name === "ultra") return <Zap className="w-3 h-3" />;
-    if (model.name === "gpt-oss-120b") return <Brain className="w-3 h-3" />;
-    if (model.name === "sdxl") return <Image className="w-3 h-3" />;
-    if (model.name === "minimax-video-01") return <Video className="w-3 h-3" />;
+    if (
+      model.name === "gpt-oss-120b" ||
+      model.name === "gemma-4-31b" ||
+      model.name === "nemotron-3-super"
+    )
+      return <Brain className="w-3 h-3" />;
     return <Cpu className="w-3 h-3" />;
   };
 
