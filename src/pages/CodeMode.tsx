@@ -558,6 +558,23 @@ const CodeMode = () => {
               className="w-32"
             />
           </div>
+          {loopRunning ? (
+            <Button variant="destructive" size="sm" onClick={stopAutoFix}>
+              <StopCircle className="w-4 h-4 mr-1" />
+              Stop loop ({loopIteration}/{MAX_LOOP_ITERATIONS})
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={runAutoFixLoop}
+              disabled={isStreaming || files.length === 0}
+              title="Combines Nemotron 3 Super + GPT-OSS-120B to detect and fix bugs across your workspace, looping up to 5 times."
+            >
+              <Wand2 className="w-4 h-4 mr-1" />
+              Auto-fix loop
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleDownloadZip}>
             <Download className="w-4 h-4 mr-1" />
             ZIP ({files.length})
@@ -566,8 +583,16 @@ const CodeMode = () => {
       </header>
 
       <p className="text-xs text-muted-foreground px-4 py-1 border-b border-border bg-muted/30">
-        {TIER_DESCRIPTION[tier]}
+        {TIER_DESCRIPTION[tier]} · Powered by Nemotron 3 Super (planner) + GPT-OSS-120B (executor).
       </p>
+
+      {loopLog.length > 0 && (
+        <div className="px-4 py-2 border-b border-border bg-muted/20 max-h-28 overflow-y-auto font-mono text-[10px] space-y-0.5">
+          {loopLog.map((line, i) => (
+            <div key={i} className="text-muted-foreground">{line}</div>
+          ))}
+        </div>
+      )}
 
       {/* Main split */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] overflow-hidden">
