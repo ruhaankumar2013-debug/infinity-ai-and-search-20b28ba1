@@ -553,7 +553,9 @@ const CodeMode = () => {
                     </Badge>
                     <span className="text-xs font-mono truncate flex-1">{activePath}</span>
                     {dirty && (
-                      <span className="text-[10px] text-warning">unsaved</span>
+                      <span className="text-[10px] text-muted-foreground italic">
+                        unsaved
+                      </span>
                     )}
                     <Button
                       size="sm"
