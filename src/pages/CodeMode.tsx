@@ -27,6 +27,8 @@ import {
   ArrowLeft,
   Sparkles,
   Save,
+  Wand2,
+  StopCircle,
 } from "lucide-react";
 import JSZip from "jszip";
 import {
@@ -34,6 +36,7 @@ import {
   stripCodeBlocks,
   languageFromPath,
 } from "@/lib/codeBlockParser";
+import { scanFiles, formatIssuesForAI } from "@/lib/staticErrorScanner";
 import type { Session } from "@supabase/supabase-js";
 
 interface CodeFile {
@@ -85,6 +88,13 @@ const CodeMode = () => {
   const [dirty, setDirty] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-fix loop state
+  const [loopRunning, setLoopRunning] = useState(false);
+  const [loopIteration, setLoopIteration] = useState(0);
+  const [loopLog, setLoopLog] = useState<string[]>([]);
+  const stopLoopRef = useRef(false);
+  const MAX_LOOP_ITERATIONS = 5;
 
   // Auth
   useEffect(() => {
@@ -179,6 +189,88 @@ const CodeMode = () => {
     if (!activePath && parsed[0]) setActivePath(parsed[0].path);
   };
 
+  // Core: stream a request to code-chat. Returns the full streamed text and parsed files.
+  // Optionally appends a placeholder assistant message and updates it as text streams in.
+  const streamCodeChat = async (
+    chatMessages: ChatMsg[],
+    mode: "build" | "fix",
+    overrideFiles?: CodeFile[],
+  ): Promise<{ streamed: string; parsed: ReturnType<typeof parseCodeBlocks> } | null> => {
+    if (!conversationId || !session?.user) return null;
+
+    const filesForCtx = overrideFiles ?? files;
+
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/code-chat`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: chatMessages,
+          tier,
+          mode,
+          existingFiles: filesForCtx.map((f) => ({
+            path: f.path,
+            language: f.language,
+            content: f.content,
+          })),
+        }),
+      },
+    );
+
+    if (!res.ok || !res.body) {
+      let msg = "Failed to stream response";
+      try {
+        const j = await res.json();
+        msg = j.error || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let streamed = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line || line.startsWith(":")) continue;
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+        try {
+          const p = JSON.parse(data);
+          const delta = p.choices?.[0]?.delta?.content;
+          if (delta) {
+            streamed += delta;
+            // Live-update the last assistant message
+            setChat((prev) => {
+              const copy = [...prev];
+              if (copy.length && copy[copy.length - 1].role === "assistant") {
+                copy[copy.length - 1] = { role: "assistant", content: streamed };
+              }
+              return copy;
+            });
+          }
+        } catch {
+          /* partial JSON */
+        }
+      }
+    }
+
+    const parsed = parseCodeBlocks(streamed);
+    return { streamed, parsed };
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !conversationId || !session?.user) return;
     const userText = input.trim();
@@ -188,82 +280,13 @@ const CodeMode = () => {
     setChat([...newChat, { role: "assistant", content: "" }]);
     setIsStreaming(true);
 
-    let streamed = "";
-
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/code-chat`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            messages: newChat,
-            tier,
-            existingFiles: files.map((f) => ({
-              path: f.path,
-              language: f.language,
-              content: f.content,
-            })),
-          }),
-        },
-      );
+      const result = await streamCodeChat(newChat, "build");
+      if (!result) return;
+      const { streamed, parsed } = result;
 
-      if (!res.ok || !res.body) {
-        let msg = "Failed to stream response";
-        try {
-          const j = await res.json();
-          msg = j.error || msg;
-        } catch {}
-        setChat((prev) => {
-          const copy = [...prev];
-          copy[copy.length - 1] = { role: "assistant", content: `⚠️ ${msg}` };
-          return copy;
-        });
-        toast({ title: "Code Mode error", description: msg, variant: "destructive" });
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() || "";
-        for (const raw of lines) {
-          const line = raw.trim();
-          if (!line || line.startsWith(":")) continue;
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              streamed += delta;
-              setChat((prev) => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { role: "assistant", content: streamed };
-                return copy;
-              });
-            }
-          } catch {
-            /* partial JSON */
-          }
-        }
-      }
-
-      // Once streaming is done, parse code blocks and persist
-      const parsedFiles = parseCodeBlocks(streamed);
-      if (parsedFiles.length > 0 && conversationId) {
-        await upsertFiles(conversationId, session.user.id, parsedFiles);
-        // Replace assistant message with stripped narrative so files aren't dumped twice
+      if (parsed.length > 0 && conversationId && session?.user) {
+        await upsertFiles(conversationId, session.user.id, parsed);
         const narrative = stripCodeBlocks(streamed);
         setChat((prev) => {
           const copy = [...prev];
@@ -271,17 +294,142 @@ const CodeMode = () => {
           return copy;
         });
         toast({
-          title: `Saved ${parsedFiles.length} file${parsedFiles.length > 1 ? "s" : ""}`,
-          description: parsedFiles.map((p) => p.path).join(", "),
+          title: `Saved ${parsed.length} file${parsed.length > 1 ? "s" : ""}`,
+          description: parsed.map((p) => p.path).join(", "),
         });
       }
     } catch (e) {
-      console.error(e);
       const msg = e instanceof Error ? e.message : "Unknown error";
+      setChat((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "assistant", content: `⚠️ ${msg}` };
+        return copy;
+      });
       toast({ title: "Code Mode error", description: msg, variant: "destructive" });
     } finally {
       setIsStreaming(false);
     }
+  };
+
+  // ============ Auto-Fix Loop ============
+  // Runs static error scans + AI self-review iteratively until clean or max iterations.
+  const runAutoFixLoop = async () => {
+    if (!conversationId || !session?.user) return;
+    if (files.length === 0) {
+      toast({ title: "Nothing to fix", description: "Generate some code first." });
+      return;
+    }
+
+    stopLoopRef.current = false;
+    setLoopRunning(true);
+    setLoopIteration(0);
+    setLoopLog([]);
+
+    const log = (msg: string) => {
+      console.log("[auto-fix]", msg);
+      setLoopLog((prev) => [...prev, msg]);
+    };
+
+    try {
+      let currentFiles = files;
+      for (let iter = 1; iter <= MAX_LOOP_ITERATIONS; iter++) {
+        if (stopLoopRef.current) {
+          log(`Stopped by user at iteration ${iter}.`);
+          break;
+        }
+        setLoopIteration(iter);
+        log(`▶ Iteration ${iter}/${MAX_LOOP_ITERATIONS}: scanning…`);
+
+        const issues = scanFiles(
+          currentFiles.map((f) => ({
+            path: f.path,
+            language: f.language,
+            content: f.content,
+          })),
+        );
+        const issueText = formatIssuesForAI(issues);
+        log(
+          issues.length === 0
+            ? `  No static errors found. Asking AI to deep-review…`
+            : `  Found ${issues.length} static issue(s).`,
+        );
+
+        const userPrompt =
+          issues.length > 0
+            ? `Fix the following issues across the workspace files. Static analysis reported:\n\n${issueText}\n\nReview each affected file carefully and re-emit ONLY the files you change.`
+            : `Deep-review the workspace for bugs, broken imports, missing edge cases, type errors, or security issues. If everything looks good, respond with exactly NO_ISSUES_FOUND.`;
+
+        const reviewChat: ChatMsg[] = [{ role: "user", content: userPrompt }];
+        // Show the loop step in the visible chat
+        setChat((prev) => [
+          ...prev,
+          { role: "user", content: `🔁 Auto-fix iteration ${iter}\n${userPrompt}` },
+          { role: "assistant", content: "" },
+        ]);
+
+        const result = await streamCodeChat(reviewChat, "fix", currentFiles);
+        if (!result) {
+          log(`  ✗ Stream failed.`);
+          break;
+        }
+        const { streamed, parsed } = result;
+
+        if (streamed.trim().toUpperCase().includes("NO_ISSUES_FOUND") && parsed.length === 0) {
+          log(`  ✓ AI reports no further issues. Loop complete.`);
+          setChat((prev) => {
+            const copy = [...prev];
+            copy[copy.length - 1] = {
+              role: "assistant",
+              content: `✅ No further issues found.`,
+            };
+            return copy;
+          });
+          break;
+        }
+
+        if (parsed.length === 0) {
+          log(`  AI replied with no file changes. Stopping.`);
+          break;
+        }
+
+        // Persist fixes
+        await upsertFiles(conversationId, session.user.id, parsed);
+        const narrative = stripCodeBlocks(streamed);
+        setChat((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: "assistant", content: narrative };
+          return copy;
+        });
+        log(`  ✓ Applied fixes to ${parsed.length} file(s): ${parsed.map((p) => p.path).join(", ")}`);
+
+        // Refresh local snapshot for next iteration
+        const { data: refreshed } = await supabase
+          .from("code_files")
+          .select("id, path, language, content, updated_at")
+          .eq("conversation_id", conversationId)
+          .order("path", { ascending: true });
+        if (refreshed) currentFiles = refreshed as CodeFile[];
+
+        // Quick re-scan: if static errors are gone AND AI changed nothing else, stop early
+        const reScan = scanFiles(currentFiles);
+        if (reScan.length === 0 && iter >= 2) {
+          log(`  ✓ Static errors cleared after iteration ${iter}.`);
+          // Continue one more pass to let AI do a deep review unless we're at max
+        }
+      }
+      toast({ title: "Auto-fix loop finished", description: `Ran ${loopIteration} iteration(s).` });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      log(`✗ Loop error: ${msg}`);
+      toast({ title: "Auto-fix error", description: msg, variant: "destructive" });
+    } finally {
+      setLoopRunning(false);
+      stopLoopRef.current = false;
+    }
+  };
+
+  const stopAutoFix = () => {
+    stopLoopRef.current = true;
   };
 
   const handleSaveBuffer = async () => {
@@ -410,6 +558,23 @@ const CodeMode = () => {
               className="w-32"
             />
           </div>
+          {loopRunning ? (
+            <Button variant="destructive" size="sm" onClick={stopAutoFix}>
+              <StopCircle className="w-4 h-4 mr-1" />
+              Stop loop ({loopIteration}/{MAX_LOOP_ITERATIONS})
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={runAutoFixLoop}
+              disabled={isStreaming || files.length === 0}
+              title="Combines Nemotron 3 Super + GPT-OSS-120B to detect and fix bugs across your workspace, looping up to 5 times."
+            >
+              <Wand2 className="w-4 h-4 mr-1" />
+              Auto-fix loop
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleDownloadZip}>
             <Download className="w-4 h-4 mr-1" />
             ZIP ({files.length})
@@ -418,8 +583,16 @@ const CodeMode = () => {
       </header>
 
       <p className="text-xs text-muted-foreground px-4 py-1 border-b border-border bg-muted/30">
-        {TIER_DESCRIPTION[tier]}
+        {TIER_DESCRIPTION[tier]} · Powered by Nemotron 3 Super (planner) + GPT-OSS-120B (executor).
       </p>
+
+      {loopLog.length > 0 && (
+        <div className="px-4 py-2 border-b border-border bg-muted/20 max-h-28 overflow-y-auto font-mono text-[10px] space-y-0.5">
+          {loopLog.map((line, i) => (
+            <div key={i} className="text-muted-foreground">{line}</div>
+          ))}
+        </div>
+      )}
 
       {/* Main split */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] overflow-hidden">
